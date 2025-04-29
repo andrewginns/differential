@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "newsletter_generator"
+version = "0.1.0"
+description = "Automated Weekly Technical Newsletter Generation System"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "aiohttp>=3.9.3",
+    "crawl4ai>=0.6.2",
+    "fastapi>=0.115.12",
+    "lightrag>=0.1.0b6",
+    "ngrok>=1.4.0",
+    "openai>=1.76.2",
+    "pydantic>=2.11.4",
+    "pymupdf>=1.25.5",
+    "pytest-asyncio>=0.26.0",
+    "python-dotenv>=1.1.0",
+    "pyyaml>=6.0.2",
+    "requests>=2.32.3",
+    "schedule>=1.2.2",
+    "tenacity>=9.1.2",
+    "trafilatura>=2.0.0",
+    "uvicorn>=0.34.2",
+    "youtube-transcript-api>=1.0.3",
+]  # Will be populated after adding dependencies with uv
+
+[project.optional-dependencies]
+dev = []  # Will be populated after adding dev dependencies with uv
+
+[tool.pytest]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+    "mypy>=1.15.0",
+    "pylint>=3.3.6",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+]
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newsletter_generator"]
