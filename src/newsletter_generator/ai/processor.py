@@ -331,14 +331,11 @@ class AIProcessor:
                     f"🔄 CACHE BYPASS: Force refreshing categorization for newsletter '{newsletter_id}'"
                 )
 
-            # Truncate content to avoid token limits
-            truncated_content = content[:4000]
-
             logger.info(
                 f"🔍 PROCESSING: Categorizing content for newsletter '{newsletter_id}' using {self.provider} model"
             )
             result = self.categorization_agent.run_sync(
-                f"Please categorize the following technical content: {truncated_content}"
+                f"Please categorize the following technical content: {content}"
             )
 
             categorization = result.output.model_dump()
@@ -426,14 +423,11 @@ class AIProcessor:
                 """,
             )
 
-            # Truncate content to avoid token limits
-            truncated_content = content[:4000]
-
             logger.info(
                 f"🔍 PROCESSING: Summarizing content for newsletter '{newsletter_id}' using {self.provider} model"
             )
             result = summarization_agent.run_sync(
-                f"Please summarize the following technical content: {truncated_content}"
+                f"Please summarize the following technical content: {content}"
             )
 
             summary = result.output
@@ -498,14 +492,11 @@ class AIProcessor:
                     f"🔄 CACHE BYPASS: Force refreshing insights for newsletter '{newsletter_id}'"
                 )
 
-            # Truncate content to avoid token limits
-            truncated_content = content[:4000]
-
             logger.info(
                 f"🔍 PROCESSING: Extracting insights for newsletter '{newsletter_id}' using {self.provider} model"
             )
             result = self.insights_agent.run_sync(
-                f"Please extract key technical insights from the following content: {truncated_content}"
+                f"Please extract key technical insights from the following content: {content}"
             )
 
             insights = result.output.insights
@@ -567,14 +558,11 @@ class AIProcessor:
                     f"🔄 CACHE BYPASS: Force refreshing relevance score for newsletter '{newsletter_id}'"
                 )
 
-            # Truncate content to avoid token limits
-            truncated_content = content[:4000]
-
             logger.info(
                 f"🔍 PROCESSING: Evaluating relevance for newsletter '{newsletter_id}' using {self.provider} model"
             )
             result = self.relevance_agent.run_sync(
-                f"Please evaluate the technical relevance of the following content: {truncated_content}"
+                f"Please evaluate the technical relevance of the following content: {content}"
             )
 
             relevance = result.output.relevance_score
@@ -665,9 +653,6 @@ class AIProcessor:
                 """,
             )
 
-            # Truncate content to avoid token limits
-            truncated_content = content[:4000]
-
             logger.info(
                 f"🔍 PROCESSING: Generating newsletter section for '{newsletter_id}' using {self.provider} model"
             )
@@ -679,7 +664,7 @@ class AIProcessor:
                 Category: {category}
                 
                 Content:
-                {truncated_content}
+                {content}
                 """
             )
 
