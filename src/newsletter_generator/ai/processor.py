@@ -1,57 +1,113 @@
 """AI processor module for the newsletter generator.
 
-This module integrates OpenAI models for content processing, categorization,
-and summarization of technical content.
+This module integrates PydanticAI for content processing, categorization,
+and summarization of technical content with support for multiple LLM providers.
 """
 
 import os
-from typing import Dict, Any, List, Optional, Union, Tuple
+import json
+import hashlib
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union, Tuple, Literal
+from enum import Enum
 
-from openai import OpenAI
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.gemini import GeminiModel
 
 from newsletter_generator.utils.logging_utils import get_logger
-from newsletter_generator.utils.config import CONFIG, get_openai_api_key
+from newsletter_generator.utils.config import (
+    CONFIG,
+)
+import logfire
+
+# Configure Logfire
+logfire.configure(
+    send_to_logfire="if-token-present",
+    service_name="differential-newsletter",
+    scrubbing=False,
+)
+logfire.instrument_pydantic_ai()
 
 logger = get_logger("ai.processor")
 
 
+class ModelProvider(str, Enum):
+    """Enum for supported model providers."""
+
+    OPENAI = "openai"
+    GEMINI = "gemini"
+
+
+class CategoryOutput(BaseModel):
+    """Pydantic model for categorization output."""
+
+    primary_category: str = Field(description="The primary category of the content")
+    secondary_categories: List[str] = Field(
+        description="Secondary categories if applicable", max_items=3
+    )
+    tags: List[str] = Field(description="Relevant tags", max_items=5)
+    confidence: float = Field(
+        description="Confidence score between 0.0 and 1.0", ge=0.0, le=1.0
+    )
+
+
+class InsightsOutput(BaseModel):
+    """Pydantic model for insights output."""
+
+    insights: List[str] = Field(
+        description="Key technical insights extracted from the content",
+        min_items=3,
+        max_items=5,
+    )
+
+
+class RelevanceOutput(BaseModel):
+    """Pydantic model for relevance evaluation."""
+
+    relevance_score: float = Field(
+        description="Relevance score between 0.0 and 1.0", ge=0.0, le=1.0
+    )
+
+
 class AIProcessor:
-    """Processes content using OpenAI models.
-    
-    This class provides an interface to OpenAI models for content processing,
+    """Processes content using PydanticAI with support for multiple LLM models.
+
+    This class provides an interface to LLM models for content processing,
     categorization, and summarization of technical content.
     """
-    
-    def __init__(self):
+
+    def __init__(
+        self,
+        provider: ModelProvider = ModelProvider.GEMINI,
+        output_dir: str = "newsletter_output",
+    ):
         """Initialize the AI processor.
-        
-        Sets up the OpenAI client and configures the models to use.
-        """
-        self.openai_client = OpenAI(api_key=get_openai_api_key())
-        self.llm_model = CONFIG.get("OPENAI_LLM_MODEL", "o4-mini")
-        
-        logger.info(f"Initialized AI processor with LLM model: {self.llm_model}")
-    
-    def categorize_content(self, content: str) -> Dict[str, Any]:
-        """Categorize technical content into predefined categories.
-        
+
+        Sets up the PydanticAI agents with the appropriate models.
+
         Args:
-            content: The content to categorize.
-            
-        Returns:
-            A dictionary containing the category information:
-            {
-                "primary_category": str,
-                "secondary_categories": List[str],
-                "tags": List[str],
-                "confidence": float
-            }
-            
-        Raises:
-            Exception: If there's an error categorizing the content.
+            provider: The model provider to use (OpenAI or Gemini)
+            output_dir: Base directory to store newsletter outputs
         """
-        try:
-            system_prompt = """
+        self.provider = provider
+        self.output_dir = output_dir
+
+        # Define the models
+        self.openai_model = OpenAIModel("o4-mini")
+        self.gemini_model = GeminiModel(
+            "gemini-2.5-pro-preview-03-25", provider="google-vertex"
+        )
+
+        # Set the current model based on provider
+        self.current_model = self._get_model_for_provider(provider)
+
+        # Create agents for different tasks
+        self.categorization_agent = Agent(
+            self.current_model,
+            output_type=CategoryOutput,
+            system_prompt="""
             You are a technical content categorization assistant. Your task is to analyze
             technical content and categorize it into one of the following primary categories:
             
@@ -70,115 +126,14 @@ class AIProcessor:
             
             Also provide up to 3 secondary categories if applicable, and up to 5 relevant tags.
             Provide a confidence score between 0.0 and 1.0 for your categorization.
-            
-            Return your analysis as a JSON object with the following structure:
-            {
-                "primary_category": "string",
-                "secondary_categories": ["string", "string"],
-                "tags": ["string", "string", "string", "string", "string"],
-                "confidence": float
-            }
-            """
-            
-            user_prompt = f"""
-            Please categorize the following technical content:
-            
-            {content[:4000]}  # Truncate to avoid token limits
-            
-            Return only the JSON object with your categorization.
-            """
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            result = response.choices[0].message.content
-            
-            import json
-            categorization = json.loads(result)
-            
-            logger.info(f"Categorized content as {categorization['primary_category']} with confidence {categorization['confidence']}")
-            
-            return categorization
-        except Exception as e:
-            logger.error(f"Error categorizing content: {e}")
-            raise
-    
-    def summarize_content(self, content: str, max_length: int = 200) -> str:
-        """Summarize technical content.
-        
-        Args:
-            content: The content to summarize.
-            max_length: The maximum length of the summary in words.
-            
-        Returns:
-            A summary of the content.
-            
-        Raises:
-            Exception: If there's an error summarizing the content.
-        """
-        try:
-            system_prompt = """
-            You are a technical content summarization assistant. Your task is to create
-            concise, informative summaries of technical content that capture the key
-            points while maintaining technical accuracy.
-            
-            Focus on:
-            1. The main technical concepts or innovations discussed
-            2. Key features or capabilities mentioned
-            3. Potential applications or implications
-            4. Any notable results or metrics
-            
-            Avoid:
-            1. Marketing language or hype
-            2. Redundant information
-            3. Overly basic explanations of well-known concepts
-            
-            Keep your summary clear, factual, and technically precise.
-            """
-            
-            user_prompt = f"""
-            Please summarize the following technical content in no more than {max_length} words:
-            
-            {content[:4000]}  # Truncate to avoid token limits
-            """
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            summary = response.choices[0].message.content
-            
-            logger.info(f"Generated summary of length {len(summary.split())} words")
-            
-            return summary
-        except Exception as e:
-            logger.error(f"Error summarizing content: {e}")
-            raise
-    
-    def generate_insights(self, content: str) -> List[str]:
-        """Generate key insights from technical content.
-        
-        Args:
-            content: The content to analyze.
-            
-        Returns:
-            A list of key insights extracted from the content.
-            
-        Raises:
-            Exception: If there's an error generating insights.
-        """
-        try:
-            system_prompt = """
+            """,
+        )
+        self.categorization_agent.instrument_all()
+
+        self.insights_agent = Agent(
+            self.current_model,
+            output_type=InsightsOutput,
+            system_prompt="""
             You are a technical insight extraction assistant. Your task is to identify
             the most important technical insights from the content provided.
             
@@ -192,55 +147,13 @@ class AIProcessor:
             Return a list of 3-5 concise, specific insights that would be valuable
             to technical professionals. Each insight should be a single sentence
             that captures a specific, actionable piece of information.
-            
-            Format your response as a JSON array of strings.
-            """
-            
-            user_prompt = f"""
-            Please extract key technical insights from the following content:
-            
-            {content[:4000]}  # Truncate to avoid token limits
-            
-            Return only the JSON array with your insights.
-            """
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            
-            result = response.choices[0].message.content
-            
-            import json
-            response_data = json.loads(result)
-            
-            insights = response_data.get("insights", [])
-            
-            logger.info(f"Generated {len(insights)} insights from content")
-            
-            return insights
-        except Exception as e:
-            logger.error(f"Error generating insights: {e}")
-            raise
-    
-    def evaluate_relevance(self, content: str) -> float:
-        """Evaluate the technical relevance of content.
-        
-        Args:
-            content: The content to evaluate.
-            
-        Returns:
-            A relevance score between 0.0 and 1.0.
-            
-        Raises:
-            Exception: If there's an error evaluating relevance.
-        """
-        try:
-            system_prompt = """
+            """,
+        )
+
+        self.relevance_agent = Agent(
+            self.current_model,
+            output_type=RelevanceOutput,
+            system_prompt="""
             You are a technical content relevance evaluator. Your task is to assess
             how relevant and valuable the provided content would be to technical
             professionals in a newsletter.
@@ -252,208 +165,701 @@ class AIProcessor:
             4. Technical accuracy
             5. Educational value
             
-            Return a single float value between 0.0 (not relevant) and 1.0 (highly relevant)
+            Return a relevance score between 0.0 (not relevant) and 1.0 (highly relevant)
             representing your assessment of the content's relevance.
-            """
-            
-            user_prompt = f"""
-            Please evaluate the technical relevance of the following content:
-            
-            {content[:4000]}  # Truncate to avoid token limits
-            
-            Return only a single float value between 0.0 and 1.0.
-            """
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
+            """,
+        )
+
+        logger.info(f"Initialized AI processor with provider: {provider}")
+
+    def _get_model_for_provider(self, provider: ModelProvider):
+        """Get the appropriate model for the given provider.
+
+        Args:
+            provider: The model provider to use
+
+        Returns:
+            The corresponding model instance
+        """
+        if provider == ModelProvider.OPENAI:
+            return self.openai_model
+        elif provider == ModelProvider.GEMINI:
+            return self.gemini_model
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+    def set_provider(self, provider: ModelProvider):
+        """Change the model provider.
+
+        Args:
+            provider: The model provider to use
+        """
+        self.provider = provider
+        self.current_model = self._get_model_for_provider(provider)
+
+        # Update all agents to use the new model
+        self.categorization_agent.model = self.current_model
+        self.insights_agent.model = self.current_model
+        self.relevance_agent.model = self.current_model
+
+        logger.info(f"Switched AI processor to provider: {provider}")
+
+    def _get_content_hash(self, content: str) -> str:
+        """Generate a hash for the content to use in filenames.
+
+        Args:
+            content: The content to hash
+
+        Returns:
+            A short hash string for the content
+        """
+        return hashlib.md5(content.encode("utf-8")).hexdigest()[:10]
+
+    def _get_newsletter_dir(self, newsletter_id: str) -> Path:
+        """Get the directory for storing newsletter outputs.
+
+        Args:
+            newsletter_id: Unique identifier for the newsletter
+
+        Returns:
+            Path object for the newsletter directory
+        """
+        newsletter_dir = Path(self.output_dir) / newsletter_id
+        newsletter_dir.mkdir(parents=True, exist_ok=True)
+        return newsletter_dir
+
+    def _check_cache(
+        self, file_path: Path, step_name: str, newsletter_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Check if cached output exists and load it.
+
+        Args:
+            file_path: Path to the cached file
+            step_name: Name of the processing step
+            newsletter_id: ID of the newsletter
+
+        Returns:
+            The cached data if it exists, None otherwise
+        """
+        if file_path.exists():
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                logger.info(
+                    f"✅ CACHE HIT: Found cached {step_name} data for newsletter '{newsletter_id}' at {file_path}"
+                )
+                return data
+            except Exception as e:
+                logger.warning(
+                    f"❌ CACHE ERROR: Failed to load {step_name} cache from {file_path}: {e}"
+                )
+                return None
+
+        logger.info(
+            f"❓ CACHE MISS: No cached {step_name} data found for newsletter '{newsletter_id}'"
+        )
+        return None
+
+    def _save_to_cache(
+        self, file_path: Path, data: Any, step_name: str, newsletter_id: str
+    ) -> None:
+        """Save data to cache file.
+
+        Args:
+            file_path: Path to save the cache file
+            data: Data to cache
+            step_name: Name of the processing step
+            newsletter_id: ID of the newsletter
+        """
+        try:
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
+            logger.info(
+                f"💾 CACHE SAVED: {step_name} data for newsletter '{newsletter_id}' saved to {file_path}"
             )
-            
-            result = response.choices[0].message.content.strip()
-            
-            import re
-            match = re.search(r'(\d+\.\d+)', result)
-            if match:
-                relevance = float(match.group(1))
+        except Exception as e:
+            logger.error(
+                f"❌ CACHE ERROR: Failed to save {step_name} data to {file_path}: {e}"
+            )
+
+    def categorize_content(
+        self,
+        content: str,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Categorize technical content into predefined categories.
+
+        Args:
+            content: The content to categorize.
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
+        Returns:
+            A dictionary containing the category information:
+            {
+                "primary_category": str,
+                "secondary_categories": List[str],
+                "tags": List[str],
+                "confidence": float
+            }
+
+        Raises:
+            Exception: If there's an error categorizing the content.
+        """
+        try:
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                newsletter_id = self._get_content_hash(content)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "categorization.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(
+                    cache_file, "categorization", newsletter_id
+                )
+                if cached_data:
+                    return cached_data
             else:
-                try:
-                    relevance = float(result)
-                except ValueError:
-                    logger.warning(f"Could not parse relevance score from: {result}, defaulting to 0.5")
-                    relevance = 0.5
-            
-            relevance = max(0.0, min(1.0, relevance))
-            
-            logger.info(f"Evaluated content relevance: {relevance}")
-            
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing categorization for newsletter '{newsletter_id}'"
+                )
+
+            # Truncate content to avoid token limits
+            truncated_content = content[:4000]
+
+            logger.info(
+                f"🔍 PROCESSING: Categorizing content for newsletter '{newsletter_id}' using {self.provider} model"
+            )
+            result = self.categorization_agent.run_sync(
+                f"Please categorize the following technical content: {truncated_content}"
+            )
+
+            categorization = result.output.model_dump()
+
+            logger.info(
+                f"✅ COMPLETED: Content categorized as '{categorization['primary_category']}' with confidence {categorization['confidence']}"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file, categorization, "categorization", newsletter_id
+            )
+
+            return categorization
+        except Exception as e:
+            logger.error(
+                f"❌ ERROR: Failed to categorize content for newsletter '{newsletter_id}': {e}"
+            )
+            raise
+
+    def summarize_content(
+        self,
+        content: str,
+        max_length: int = 200,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Summarize technical content.
+
+        Args:
+            content: The content to summarize.
+            max_length: The maximum length of the summary in words.
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
+        Returns:
+            A summary of the content.
+
+        Raises:
+            Exception: If there's an error summarizing the content.
+        """
+        try:
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                newsletter_id = self._get_content_hash(content)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "summary.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(cache_file, "summary", newsletter_id)
+                if cached_data and "summary" in cached_data:
+                    return cached_data["summary"]
+            else:
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing summary for newsletter '{newsletter_id}'"
+                )
+
+            # Create a summarization agent on demand with a custom system prompt
+            summarization_agent = Agent(
+                self.current_model,
+                system_prompt=f"""
+                You are a technical content summarization assistant. Your task is to create
+                concise, informative summaries of technical content that capture the key
+                points while maintaining technical accuracy.
+                
+                Focus on:
+                1. The main technical concepts or innovations discussed
+                2. Key features or capabilities mentioned
+                3. Potential applications or implications
+                4. Any notable results or metrics
+                
+                Avoid:
+                1. Marketing language or hype
+                2. Redundant information
+                3. Overly basic explanations of well-known concepts
+                
+                Keep your summary clear, factual, and technically precise.
+                Your summary should be no more than {max_length} words.
+                """,
+            )
+
+            # Truncate content to avoid token limits
+            truncated_content = content[:4000]
+
+            logger.info(
+                f"🔍 PROCESSING: Summarizing content for newsletter '{newsletter_id}' using {self.provider} model"
+            )
+            result = summarization_agent.run_sync(
+                f"Please summarize the following technical content: {truncated_content}"
+            )
+
+            summary = result.output
+
+            logger.info(
+                f"✅ COMPLETED: Generated summary of {len(summary.split())} words for newsletter '{newsletter_id}'"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file,
+                {"summary": summary, "max_length": max_length},
+                "summary",
+                newsletter_id,
+            )
+
+            return summary
+        except Exception as e:
+            logger.error(
+                f"❌ ERROR: Failed to summarize content for newsletter '{newsletter_id}': {e}"
+            )
+            raise
+
+    def generate_insights(
+        self,
+        content: str,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> List[str]:
+        """Generate key insights from technical content.
+
+        Args:
+            content: The content to analyze.
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
+        Returns:
+            A list of key insights extracted from the content.
+
+        Raises:
+            Exception: If there's an error generating insights.
+        """
+        try:
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                newsletter_id = self._get_content_hash(content)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "insights.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(cache_file, "insights", newsletter_id)
+                if cached_data and "insights" in cached_data:
+                    return cached_data["insights"]
+            else:
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing insights for newsletter '{newsletter_id}'"
+                )
+
+            # Truncate content to avoid token limits
+            truncated_content = content[:4000]
+
+            logger.info(
+                f"🔍 PROCESSING: Extracting insights for newsletter '{newsletter_id}' using {self.provider} model"
+            )
+            result = self.insights_agent.run_sync(
+                f"Please extract key technical insights from the following content: {truncated_content}"
+            )
+
+            insights = result.output.insights
+
+            logger.info(
+                f"✅ COMPLETED: Generated {len(insights)} insights for newsletter '{newsletter_id}'"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file, {"insights": insights}, "insights", newsletter_id
+            )
+
+            return insights
+        except Exception as e:
+            logger.error(
+                f"❌ ERROR: Failed to generate insights for newsletter '{newsletter_id}': {e}"
+            )
+            raise
+
+    def evaluate_relevance(
+        self,
+        content: str,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> float:
+        """Evaluate the technical relevance of content.
+
+        Args:
+            content: The content to evaluate.
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
+        Returns:
+            A relevance score between 0.0 and 1.0.
+
+        Raises:
+            Exception: If there's an error evaluating relevance.
+        """
+        try:
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                newsletter_id = self._get_content_hash(content)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "relevance.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(cache_file, "relevance", newsletter_id)
+                if cached_data and "relevance_score" in cached_data:
+                    return cached_data["relevance_score"]
+            else:
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing relevance score for newsletter '{newsletter_id}'"
+                )
+
+            # Truncate content to avoid token limits
+            truncated_content = content[:4000]
+
+            logger.info(
+                f"🔍 PROCESSING: Evaluating relevance for newsletter '{newsletter_id}' using {self.provider} model"
+            )
+            result = self.relevance_agent.run_sync(
+                f"Please evaluate the technical relevance of the following content: {truncated_content}"
+            )
+
+            relevance = result.output.relevance_score
+
+            logger.info(
+                f"✅ COMPLETED: Evaluated content relevance for newsletter '{newsletter_id}': {relevance}"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file, {"relevance_score": relevance}, "relevance", newsletter_id
+            )
+
             return relevance
         except Exception as e:
-            logger.error(f"Error evaluating relevance: {e}")
+            logger.error(
+                f"❌ ERROR: Failed to evaluate relevance for newsletter '{newsletter_id}': {e}"
+            )
             raise
-    
+
     def generate_newsletter_section(
-        self, 
-        title: str, 
-        content: str, 
-        category: str, 
-        max_length: int = 300
+        self,
+        title: str,
+        content: str,
+        category: str,
+        max_length: int = 300,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
     ) -> str:
         """Generate a newsletter section for the given content.
-        
+
         Args:
             title: The title of the content.
             content: The content to include in the newsletter.
             category: The category of the content.
             max_length: The maximum length of the section in words.
-            
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
         Returns:
             A formatted newsletter section in Markdown.
-            
+
         Raises:
             Exception: If there's an error generating the newsletter section.
         """
         try:
-            system_prompt = """
-            You are a technical newsletter section writer. Your task is to create
-            engaging, informative newsletter sections from technical content.
-            
-            Your section should include:
-            1. A brief, catchy introduction that highlights why this content is interesting
-            2. A concise summary of the key technical points
-            3. Any notable implications or applications
-            4. A brief conclusion or call to action
-            
-            Format your response in Markdown, with appropriate headings, bullet points,
-            and emphasis where needed. Make it engaging for technical professionals
-            while maintaining technical accuracy.
-            """
-            
-            user_prompt = f"""
-            Please create a newsletter section for the following technical content:
-            
-            Title: {title}
-            Category: {category}
-            
-            Content:
-            {content[:4000]}  # Truncate to avoid token limits
-            
-            Keep your section under {max_length} words and format it in Markdown.
-            """
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                newsletter_id = self._get_content_hash(content)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "newsletter_section.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(
+                    cache_file, "newsletter section", newsletter_id
+                )
+                if cached_data and "section" in cached_data:
+                    return cached_data["section"]
+            else:
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing newsletter section for '{newsletter_id}'"
+                )
+
+            # Create a newsletter section agent on demand with a custom system prompt
+            newsletter_section_agent = Agent(
+                self.current_model,
+                system_prompt=f"""
+                You are a technical newsletter section writer. Your task is to create
+                engaging, informative newsletter sections from technical content.
+                
+                Your section should include:
+                1. A brief, catchy introduction that highlights why this content is interesting
+                2. A concise summary of the key technical points
+                3. Any notable implications or applications
+                4. A brief conclusion or call to action
+                
+                Format your response in Markdown, with appropriate headings, bullet points,
+                and emphasis where needed. Make it engaging for technical professionals
+                while maintaining technical accuracy.
+                
+                Your section should be under {max_length} words.
+                """,
             )
-            
-            section = response.choices[0].message.content
-            
-            logger.info(f"Generated newsletter section of length {len(section.split())} words")
-            
+
+            # Truncate content to avoid token limits
+            truncated_content = content[:4000]
+
+            logger.info(
+                f"🔍 PROCESSING: Generating newsletter section for '{newsletter_id}' using {self.provider} model"
+            )
+            result = newsletter_section_agent.run_sync(
+                f"""
+                Please create a newsletter section for the following technical content:
+                
+                Title: {title}
+                Category: {category}
+                
+                Content:
+                {truncated_content}
+                """
+            )
+
+            section = result.output
+
+            logger.info(
+                f"✅ COMPLETED: Generated newsletter section of {len(section.split())} words for '{newsletter_id}'"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file,
+                {
+                    "section": section,
+                    "title": title,
+                    "category": category,
+                    "max_length": max_length,
+                },
+                "newsletter section",
+                newsletter_id,
+            )
+
             return section
         except Exception as e:
-            logger.error(f"Error generating newsletter section: {e}")
+            logger.error(
+                f"❌ ERROR: Failed to generate newsletter section for '{newsletter_id}': {e}"
+            )
             raise
-
 
 
 ai_processor = None
 
-def get_ai_processor():
+
+def get_ai_processor(
+    provider: Optional[ModelProvider] = None, output_dir: str = "newsletter_output"
+):
     """Get or create the singleton AI processor instance.
-    
+
+    Args:
+        provider: Optional model provider to use (OpenAI or Gemini)
+        output_dir: Base directory to store newsletter outputs
+
     Returns:
         The AIProcessor instance.
     """
     global ai_processor
     if ai_processor is None:
         try:
-            ai_processor = AIProcessor()
+            # Use the provider parameter if specified, otherwise use config
+            if provider is None:
+                config_provider = CONFIG.get("MODEL_PROVIDER", "openai").lower()
+                provider = (
+                    ModelProvider.GEMINI
+                    if config_provider == "gemini"
+                    else ModelProvider.OPENAI
+                )
+
+            ai_processor = AIProcessor(provider=provider, output_dir=output_dir)
         except Exception as e:
             logger.error(f"Error creating AIProcessor: {e}")
             raise
+    elif provider is not None and provider != ai_processor.provider:
+        # If provider is specified and different from current provider, switch
+        ai_processor.set_provider(provider)
+        logger.info(f"Switched AIProcessor to provider: {provider}")
     return ai_processor
 
 
-def categorize_content(content: str) -> Dict[str, Any]:
+def categorize_content(
+    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+) -> Dict[str, Any]:
     """Categorize technical content into predefined categories.
-    
+
     This is a convenience function that uses the singleton ai_processor instance.
-    
+
     Args:
         content: The content to categorize.
-        
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
     Returns:
         A dictionary containing the category information.
     """
-    return get_ai_processor().categorize_content(content)
+    return get_ai_processor().categorize_content(
+        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+    )
 
 
-def summarize_content(content: str, max_length: int = 200) -> str:
+def summarize_content(
+    content: str,
+    max_length: int = 200,
+    newsletter_id: Optional[str] = None,
+    force_refresh: bool = False,
+) -> str:
     """Summarize technical content.
-    
+
     This is a convenience function that uses the singleton ai_processor instance.
-    
+
     Args:
         content: The content to summarize.
         max_length: The maximum length of the summary in words.
-        
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
     Returns:
         A summary of the content.
     """
-    return get_ai_processor().summarize_content(content, max_length)
+    return get_ai_processor().summarize_content(
+        content, max_length, newsletter_id=newsletter_id, force_refresh=force_refresh
+    )
 
 
-def generate_insights(content: str) -> List[str]:
+def generate_insights(
+    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+) -> List[str]:
     """Generate key insights from technical content.
-    
+
     This is a convenience function that uses the singleton ai_processor instance.
-    
+
     Args:
         content: The content to analyze.
-        
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
     Returns:
         A list of key insights extracted from the content.
     """
-    return get_ai_processor().generate_insights(content)
+    return get_ai_processor().generate_insights(
+        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+    )
 
 
-def evaluate_relevance(content: str) -> float:
+def evaluate_relevance(
+    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+) -> float:
     """Evaluate the technical relevance of content.
-    
+
     This is a convenience function that uses the singleton ai_processor instance.
-    
+
     Args:
         content: The content to evaluate.
-        
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
     Returns:
         A relevance score between 0.0 and 1.0.
     """
-    return get_ai_processor().evaluate_relevance(content)
+    return get_ai_processor().evaluate_relevance(
+        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+    )
 
 
 def generate_newsletter_section(
-    title: str, 
-    content: str, 
-    category: str, 
-    max_length: int = 300
+    title: str,
+    content: str,
+    category: str,
+    max_length: int = 300,
+    newsletter_id: Optional[str] = None,
+    force_refresh: bool = False,
 ) -> str:
     """Generate a newsletter section for the given content.
-    
+
     This is a convenience function that uses the singleton ai_processor instance.
-    
+
     Args:
         title: The title of the content.
         content: The content to include in the newsletter.
         category: The category of the content.
         max_length: The maximum length of the section in words.
-        
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
     Returns:
         A formatted newsletter section in Markdown.
     """
-    return get_ai_processor().generate_newsletter_section(title, content, category, max_length)
+    return get_ai_processor().generate_newsletter_section(
+        title,
+        content,
+        category,
+        max_length,
+        newsletter_id=newsletter_id,
+        force_refresh=force_refresh,
+    )

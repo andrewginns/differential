@@ -16,6 +16,8 @@ DEFAULT_CONFIG = {
     "OPENAI_API_KEY": None,  # Must be provided in environment
     "OPENAI_LLM_MODEL": "o4-mini",
     "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
+    "GEMINI_API_KEY": None,  # Must be provided in environment if using Gemini
+    "MODEL_PROVIDER": "openai",  # Default model provider (openai or gemini)
     "DATA_DIR": "data",
     "TTL_DAYS": 60,  # Time-to-live for stored content in days
     "LOG_LEVEL": "INFO",
@@ -64,6 +66,23 @@ def get_openai_api_key() -> str:
     if not api_key:
         raise ValueError(
             "OpenAI API key not found. Please set the OPENAI_API_KEY or OAI environment variable."
+        )
+    return api_key
+
+
+def get_gemini_api_key() -> str:
+    """Get the Gemini API key.
+
+    Returns:
+        str: The Gemini API key.
+
+    Raises:
+        ValueError: If the Gemini API key is not set.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "Gemini API key not found. Please set the GEMINI_API_KEY environment variable."
         )
     return api_key
 

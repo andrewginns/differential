@@ -16,8 +16,37 @@ An automated system for generating weekly technical newsletters from shared URLs
 Create a `.env` file with the following variables:
 ```
 OPENAI_API_KEY=your_openai_api_key
+GEMINI_API_KEY=your_gemini_api_key  # Only needed if using Gemini
+MODEL_PROVIDER=openai  # Options: openai, gemini
 WHATSAPP_VERIFY_TOKEN=your_secure_random_token
 ```
+
+### Model Provider Configuration
+
+The newsletter generator now supports two AI providers:
+
+1. **OpenAI** (default): Uses OpenAI's models for content processing
+2. **Gemini**: Uses Google's Gemini models for content processing
+
+You can configure the provider in several ways:
+
+1. **Environment Variable**: Set `MODEL_PROVIDER=gemini` in your `.env` file
+2. **Command Line**: Specify the provider when generating a newsletter:
+   ```
+   # Generate newsletter using Gemini
+   uv run -m newsletter_generator.newsletter --model-provider gemini
+   
+   # Generate newsletter using OpenAI (default)
+   uv run -m newsletter_generator.newsletter --model-provider openai
+   ```
+3. **Programmatically**: When calling the API directly, you can specify the provider:
+   ```python
+   from newsletter_generator.ai.processor import ModelProvider
+   from newsletter_generator.newsletter.assembler import assemble_newsletter
+   
+   # Use Gemini
+   result = assemble_newsletter(days=7, model_provider=ModelProvider.GEMINI)
+   ```
 
 ### Generating a WhatsApp Verify Token
 The WHATSAPP_VERIFY_TOKEN is a secure string used to verify webhook requests from Meta:
@@ -81,10 +110,16 @@ Note: The ngrok URL changes each time you restart ngrok unless you have a paid p
 4. Generate a weekly newsletter:
    ```
    # Generate using last 7 days of content (default)
-   uv run -m newsletter_generator.newsletter.assembler
+   uv run -m newsletter_generator.newsletter
 
    # Or specify custom number of days
-   uv run -m newsletter_generator.newsletter.assembler --days 5
+   uv run -m newsletter_generator.newsletter --days 5
+   
+   # Generate using Gemini instead of OpenAI
+   uv run -m newsletter_generator.newsletter --model-provider gemini
+   
+   # Combine options
+   uv run -m newsletter_generator.newsletter --days 10 --model-provider gemini
    ```
 
 5. Find generated newsletters in the `data/newsletters` directory.
