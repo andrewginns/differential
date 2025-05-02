@@ -709,6 +709,128 @@ class AIProcessor:
             )
             raise
 
+    def generate_newsletter_introduction(
+        self,
+        categories: List[str],
+        total_items: int,
+        content_summary: Optional[str] = None,
+        max_length: int = 150,
+        newsletter_id: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Generate an introduction for the newsletter.
+
+        Args:
+            categories: List of categories in the newsletter.
+            total_items: Total number of content items in the newsletter.
+            content_summary: Optional summary of newsletter content to base introduction on.
+            max_length: The maximum length of the introduction in words.
+            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            force_refresh: If True, ignore cached results and reprocess
+
+        Returns:
+            A formatted newsletter introduction in plain text.
+
+        Raises:
+            Exception: If there's an error generating the newsletter introduction.
+        """
+        try:
+            # Generate newsletter ID if not provided
+            if newsletter_id is None:
+                content_to_hash = f"{','.join(categories)}_{total_items}"
+                newsletter_id = self._get_content_hash(content_to_hash)
+                logger.info(
+                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                )
+
+            # Set up output directory
+            newsletter_dir = self._get_newsletter_dir(newsletter_id)
+            cache_file = newsletter_dir / "newsletter_introduction.json"
+
+            # Check cache first if not forcing refresh
+            if not force_refresh:
+                cached_data = self._check_cache(
+                    cache_file, "newsletter introduction", newsletter_id
+                )
+                if cached_data and "introduction" in cached_data:
+                    return cached_data["introduction"]
+            else:
+                logger.info(
+                    f"🔄 CACHE BYPASS: Force refreshing newsletter introduction for '{newsletter_id}'"
+                )
+
+            # Create a newsletter introduction agent on demand with a custom system prompt
+            newsletter_introduction_agent = Agent(
+                self.current_model,
+                system_prompt=f"""
+                You are a technical newsletter introduction writer. Your task is to create
+                engaging, informative introductions for technical newsletters.
+                
+                Your introduction should:
+                1. Welcome readers and set the tone for the newsletter
+                2. Highlight key themes or notable items from this week
+                3. Briefly mention the diversity of content available
+                4. Encourage readers to explore the different sections
+                
+                Keep your introduction concise, professional, and focused on technical content.
+                Write in a friendly but authoritative tone appropriate for a professional audience.
+                
+                Your introduction should be under {max_length} words.
+                """,
+            )
+
+            # Create the prompt based on available content
+            if content_summary:
+                prompt = f"""
+                This week's technical newsletter includes {total_items} items across {len(categories)} categories:
+                {", ".join(categories)}.
+                
+                Based on the following newsletter content summary, please generate an engaging introduction that 
+                highlights key themes and important items from this week's content.
+                
+                CONTENT SUMMARY:
+                {content_summary}
+                """
+            else:
+                prompt = f"""
+                This week's technical newsletter includes {total_items} items across {len(categories)} categories:
+                {", ".join(categories)}.
+                
+                Please generate an engaging introduction for a technical newsletter that highlights
+                the diversity of content and encourages readers to explore the different sections.
+                """
+
+            logger.info(
+                f"🔍 PROCESSING: Generating newsletter introduction for '{newsletter_id}' using {self.provider} model"
+            )
+            result = newsletter_introduction_agent.run_sync(prompt)
+
+            introduction = result.output
+
+            logger.info(
+                f"✅ COMPLETED: Generated newsletter introduction of {len(introduction.split())} words for '{newsletter_id}'"
+            )
+
+            # Save result to cache
+            self._save_to_cache(
+                cache_file,
+                {
+                    "introduction": introduction,
+                    "categories": categories,
+                    "total_items": total_items,
+                    "max_length": max_length,
+                },
+                "newsletter introduction",
+                newsletter_id,
+            )
+
+            return introduction
+        except Exception as e:
+            logger.error(
+                f"❌ ERROR: Failed to generate newsletter introduction for '{newsletter_id}': {e}"
+            )
+            raise
+
 
 ai_processor = None
 
@@ -860,6 +982,39 @@ def generate_newsletter_section(
         content,
         category,
         max_length,
+        newsletter_id=newsletter_id,
+        force_refresh=force_refresh,
+    )
+
+
+def generate_newsletter_introduction(
+    categories: List[str],
+    total_items: int,
+    content_summary: Optional[str] = None,
+    max_length: int = 150,
+    newsletter_id: Optional[str] = None,
+    force_refresh: bool = False,
+) -> str:
+    """Generate an introduction for the newsletter.
+
+    This is a convenience function that uses the singleton ai_processor instance.
+
+    Args:
+        categories: List of categories in the newsletter.
+        total_items: Total number of content items in the newsletter.
+        content_summary: Optional summary of newsletter content to base introduction on.
+        max_length: The maximum length of the introduction in words.
+        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        force_refresh: If True, ignore cached results and reprocess
+
+    Returns:
+        A formatted newsletter introduction in plain text.
+    """
+    return get_ai_processor().generate_newsletter_introduction(
+        categories,
+        total_items,
+        content_summary=content_summary,
+        max_length=max_length,
         newsletter_id=newsletter_id,
         force_refresh=force_refresh,
     )

@@ -145,35 +145,28 @@ class NewsletterAssembler:
             categories = list(categorized_content.keys())
             total_items = sum(len(items) for items in categorized_content.values())
 
+            # Prepare content summary if we have category sections
+            content_summary = None
             if category_sections:
-                # Create a prompt that includes snippets of the actual content
+                # Create a summary of the actual content
                 all_sections_text = "\n".join(category_sections.values())
-                prompt = f"""
-                This week's technical newsletter includes {total_items} items across {len(categories)} categories:
-                {", ".join(categories)}.
-                
-                Based on the following newsletter content, please generate an engaging introduction that 
-                highlights key themes and important items from this week's content.
-                
-                CONTENT SUMMARY:
-                {processor.summarize_content(all_sections_text, max_length=500)}
-                """
-            else:
-                prompt = f"""
-                This week's technical newsletter includes {total_items} items across {len(categories)} categories:
-                {", ".join(categories)}.
-                
-                Please generate an engaging introduction for a technical newsletter that highlights
-                the diversity of content and encourages readers to explore the different sections.
-                """
+                content_summary = processor.summarize_content(
+                    all_sections_text, max_length=500
+                )
 
-            introduction = processor.summarize_content(prompt, max_length=150)
+            # Use the dedicated newsletter introduction function
+            newsletter_introduction = processor.generate_newsletter_introduction(
+                categories=categories,
+                total_items=total_items,
+                content_summary=content_summary,
+                max_length=150,
+            )
 
             formatted_intro = f"""
 
 *{datetime.datetime.now().strftime("%B %d, %Y")}*
 
-{introduction}
+{newsletter_introduction}
 
 """
 
