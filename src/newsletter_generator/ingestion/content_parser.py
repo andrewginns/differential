@@ -3,13 +3,15 @@
 This module provides classes for parsing content from different sources:
 - HTML content using Trafilatura as a fallback for Crawl4AI
 - PDF content using PyMuPDF (Fitz)
-- YouTube transcripts using string manipulation
+- YouTube transcripts using youtube-transcript-api
 """
 
 from typing import Dict, Any, List, Optional, Union
 
 import fitz  # PyMuPDF
 import trafilatura
+import re
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 from newsletter_generator.utils.logging_utils import get_logger
 
@@ -123,49 +125,92 @@ class PDFContentParser:
 
 class YouTubeContentParser:
     """Parses YouTube transcript data.
-    
-    This class converts transcript segments into a coherent text.
+
+    This class extracts transcripts from YouTube videos given a URL or video ID
+    using the youtube-transcript-api library and formats them as Markdown.
     """
-    
-    def __init__(self):
-        """Initialize the YouTube content parser."""
-        pass
-    
-    def parse(self, transcript_data: List[Dict[str, Any]]) -> str:
-        """Parse YouTube transcript data.
-        
+
+    def _extract_video_id(self, url_or_id: str) -> str | None:
+        """Extracts the video ID from various YouTube URL formats or returns the ID itself.
+
+        Handles URLs like:
+        - https://www.youtube.com/watch?v=VIDEO_ID
+        - https://youtu.be/VIDEO_ID
+        - https://www.youtube.com/embed/VIDEO_ID
+        - https://m.youtube.com/watch?v=VIDEO_ID
+        - VIDEO_ID (if passed directly)
+
         Args:
-            transcript_data: A list of transcript segments, each containing
-                'text' and 'start' keys.
-            
+            url_or_id: A YouTube video URL or a potential video ID string.
+
         Returns:
-            The transcript as Markdown.
-            
-        Raises:
-            Exception: If there's an error parsing the transcript.
+            The extracted video ID string, or None if no valid ID is found.
         """
-        logger.info("Parsing YouTube transcript")
-        
+        # Regex to find the video ID from various YouTube URL patterns
+        # Covers standard, mobile, short URLs, and embed URLs
+        patterns = [
+            r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',  # Standard '?v=' or '/'. Must be 11 chars.
+            r'^([0-9A-Za-z_-]{11})$'           # Direct video ID
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, url_or_id)
+            if match:
+                # Return the first captured group if it's 11 characters long
+                potential_id = match.group(1)
+                if len(potential_id) == 11:
+                    return potential_id
+
+        # Basic check if the input itself might be a valid ID (11 chars, specific characters)
+        if re.fullmatch(r'[0-9A-Za-z_-]{11}', url_or_id):
+             return url_or_id
+
+        return None # Return None if no valid ID pattern is matched
+
+    def parse(self, transcript_data) -> str:
+        """Parses YouTube transcript data into formatted Markdown.
+
+        Args:
+            transcript_data: A list of FetchedTranscriptSnippet objects from the YouTube Transcript API.
+
+        Returns:
+            The transcript formatted as a Markdown string with timestamps.
+        """
+        logger.info("Parsing YouTube transcript data")
+
         try:
+            # Check if the transcript has content
             if not transcript_data:
-                logger.warning("Empty transcript data")
-                return "# YouTube Video Transcript\n\n*No transcript available*"
-            
-            text_parts = []
+                logger.warning("Empty transcript data received")
+                return "# YouTube Video Transcript\n\n*No transcript content found.*"
+
+            # Format transcript with timestamps
+            formatted_lines = []
             for segment in transcript_data:
-                text = segment.get('text', '').strip()
-                if text:
-                    text_parts.append(text)
+                # Access FetchedTranscriptSnippet attributes directly
+                text = segment.text.strip()
+                start_time = segment.start
+                
+                # Skip empty segments
+                if not text:
+                    continue
+                
+                # Convert start time to MM:SS format
+                minutes, seconds = divmod(int(start_time), 60)
+                timestamp = f"[{minutes:02d}:{seconds:02d}]"
+                
+                # Add formatted line with timestamp
+                formatted_lines.append(f"{timestamp} {text}")
             
-            if not text_parts:
-                logger.warning("No text extracted from transcript data")
-                return "# YouTube Video Transcript\n\n*No transcript content could be extracted*"
+            # Join all lines with newlines between them
+            transcript_text = "\n".join(formatted_lines)
             
-            full_text = " ".join(text_parts)
-            
-            markdown = f"# YouTube Video Transcript\n\n{full_text}"
+            # Format as Markdown
+            markdown = "# YouTube Video Transcript\n\n"
+            markdown += transcript_text
             
             return markdown
+
         except Exception as e:
             logger.error(f"Error parsing YouTube transcript: {e}")
             raise
