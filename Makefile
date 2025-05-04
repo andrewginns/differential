@@ -1,6 +1,6 @@
 install:
 	uv sync
-	crawl4ai-setup
+	uv run crawl4ai-setup
 
 tunnel:
 	ngrok http 8000
