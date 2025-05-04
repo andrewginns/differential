@@ -203,10 +203,14 @@ class NewsletterAssembler:
             )
 
             section = f"\n\n## {category}\n\n"
+            
+            # Keep track of content sections already added to prevent duplication
+            added_content_sections = set()
 
             for item in sorted_items:
                 title = item["metadata"].get("title", "Untitled")
                 url = item["metadata"].get("url", "")
+                content_id = item["id"]
 
                 if "summary" not in item["metadata"]:
                     summary = processor.summarize_content(item["text"], max_length=100)
@@ -215,10 +219,27 @@ class NewsletterAssembler:
                 else:
                     summary = item["metadata"]["summary"]
 
+                # Use a combination of content_id and title as the content hash
+                # This ensures we don't repeat the same content even if the AI generates
+                # slightly different text
+                content_hash = hash(f"{content_id}:{title}")
+                
+                if content_hash in added_content_sections:
+                    logger.warning(
+                        f"Skipping duplicate content ID {content_id} ({title}) in category '{category}'"
+                    )
+                    continue
+                
+                added_content_sections.add(content_hash)
+                
                 content_section = processor.generate_newsletter_section(
-                    title=title, content=item["text"], category=category, max_length=200
+                    title=title, 
+                    content=item["text"], 
+                    category=category, 
+                    max_length=200,
+                    newsletter_id=content_id
                 )
-
+                
                 section += f"{content_section}\n\n"
 
                 if url:
@@ -227,7 +248,7 @@ class NewsletterAssembler:
                 section += "---\n\n"
 
             logger.info(
-                f"Generated section for category '{category}' with {len(items)} items"
+                f"Generated section for category '{category}' with {len(added_content_sections)} unique items"
             )
 
             return section
@@ -256,7 +277,30 @@ class NewsletterAssembler:
                 logger.warning(f"No content found in the past {days} days")
                 return None
 
+            # Track content IDs that have been processed to avoid duplicate content
+            processed_content_ids = set()
+            
+            # Create a filtered categorized content dictionary
             categorized_content = self.organize_by_category(content_items)
+            filtered_categorized_content = {}
+            
+            # First pass: filter out duplicate content items
+            for category, items in categorized_content.items():
+                filtered_items = []
+                for item in items:
+                    if item["id"] not in processed_content_ids:
+                        processed_content_ids.add(item["id"])
+                        filtered_items.append(item)
+                    else:
+                        logger.warning(
+                            f"Skipping duplicate content ID {item['id']} in category '{category}'"
+                        )
+                
+                if filtered_items:
+                    filtered_categorized_content[category] = filtered_items
+            
+            # Use the filtered content for the rest of the process
+            categorized_content = filtered_categorized_content
 
             # Generate category sections first
             category_sections = {}

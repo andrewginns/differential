@@ -109,6 +109,15 @@ class StorageManager:
             except Exception as e:
                 logger.error(f"Error reading content registry: {e}")
 
+        # Check if this file path already exists in the registry
+        for existing_id, existing_path in registry.items():
+            if existing_path == file_path and existing_id != content_id:
+                logger.warning(f"Duplicate file path detected: {file_path}. Existing content ID: {existing_id}")
+                # Replace the old entry
+                registry.pop(existing_id)
+                logger.info(f"Removed duplicate entry with content ID: {existing_id}")
+                break
+
         registry[content_id] = file_path
 
         try:
