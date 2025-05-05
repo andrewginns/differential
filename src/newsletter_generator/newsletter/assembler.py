@@ -32,9 +32,7 @@ class NewsletterAssembler:
             output_dir: The directory to save the generated newsletters.
                 If None, uses the default from config.
         """
-        self.output_dir = output_dir or os.path.join(
-            CONFIG.get("DATA_DIR", "data"), "newsletters"
-        )
+        self.output_dir = output_dir or CONFIG.get("NEWSLETTER_DIR")
 
         os.makedirs(self.output_dir, exist_ok=True)
 

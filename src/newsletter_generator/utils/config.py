@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     "GEMINI_API_KEY": None,  # Must be provided in environment if using Gemini
     "MODEL_PROVIDER": "openai",  # Default model provider (openai or gemini)
     "DATA_DIR": "data",
+    "NEWSLETTER_DIR": "newsletters",
     "TTL_DAYS": 60,  # Time-to-live for stored content in days
     "LOG_LEVEL": "INFO",
     "LOG_FILE": "newsletter_generator.log",

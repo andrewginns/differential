@@ -81,7 +81,7 @@ class AIProcessor:
     def __init__(
         self,
         provider: ModelProvider = ModelProvider.GEMINI,
-        output_dir: str = "newsletter_output",
+        output_dir: str = "newsletter_cache",
     ):
         """Initialise the AI processor.
 
@@ -290,6 +290,7 @@ class AIProcessor:
         content: str,
         newsletter_id: Optional[str] = None,
         force_refresh: bool = False,
+        word_limit: int = 1000,
     ) -> Dict[str, Any]:
         """Categorise technical content into predefined categories.
 
@@ -297,7 +298,7 @@ class AIProcessor:
             content: The content to categorise.
             newsletter_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
-
+            word_limit: The maximum number of words to use for categorisation
         Returns:
             A dictionary containing the category information:
             {
@@ -338,7 +339,7 @@ class AIProcessor:
                 f"🔍 PROCESSING: Categorising content for newsletter '{newsletter_id}' using {self.provider} model"
             )
             result = self.categorisation_agent.run_sync(
-                f"Please categorise the following technical content: {content}"
+                f"Please categorise the following technical content: {content[:word_limit]}"
             )
 
             categorisation = result.output.model_dump()
@@ -827,7 +828,7 @@ ai_processor = None
 
 
 def get_ai_processor(
-    provider: Optional[ModelProvider] = None, output_dir: str = "newsletter_output"
+    provider: Optional[ModelProvider] = None, output_dir: str = "newsletter_cache"
 ):
     """Get or create the singleton AI processor instance.
 
