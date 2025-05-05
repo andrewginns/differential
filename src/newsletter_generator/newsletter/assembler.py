@@ -13,7 +13,7 @@ from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
 from newsletter_generator.storage import storage_manager
 from newsletter_generator.ai import processor
-from newsletter_generator.vector_db import lightrag_manager
+from newsletter_generator.vector_db import lightrag_manager  # noqa: F401
 import logfire
 
 logger = get_logger("newsletter.assembler")
@@ -397,6 +397,12 @@ class NewsletterAssembler:
             The generated section in Markdown format.
         """
         try:
+            # Functionality marked as inactive
+            logger.info(f"Related content generation is currently inactive (content_id: {content_id})")
+            return ""
+
+            # Original implementation below is inactive
+            """
             content = storage_manager.get_content(content_id)
             _ = storage_manager.get_metadata(content_id)
 
@@ -425,6 +431,7 @@ class NewsletterAssembler:
             )
 
             return section
+            """
         except Exception as e:
             logger.error(f"Error generating related content section: {e}")
             raise
@@ -527,13 +534,14 @@ def generate_related_content_section(content_id: str, max_items: int = 3) -> str
     """Generate a 'Related Content' section for a specific content item.
 
     This is a convenience function that uses the singleton newsletter_assembler instance.
+    NOTE: This functionality is currently inactive.
 
     Args:
         content_id: The ID of the content item.
         max_items: The maximum number of related items to include.
 
     Returns:
-        The generated section in Markdown format.
+        The generated section in Markdown format (currently empty as feature is inactive).
     """
     return get_newsletter_assembler().generate_related_content_section(
         content_id=content_id, max_items=max_items
