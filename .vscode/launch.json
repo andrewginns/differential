@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Webhook Receiver",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/newsletter_generator/whatsapp/webhook_receiver.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Debug Newsletter Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "newsletter_generator.newsletter",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+} 
