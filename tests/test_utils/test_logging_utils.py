@@ -41,16 +41,11 @@ class TestLoggingUtils(unittest.TestCase):
             console_handler = next(
                 h
                 for h in logger.handlers
-                if isinstance(h, logging.StreamHandler)
-                and not isinstance(h, RotatingFileHandler)
+                if isinstance(h, logging.StreamHandler) and not isinstance(h, RotatingFileHandler)
             )
-            self.assertEqual(
-                console_handler.level, logging.NOTSET
-            )  # Inherits from logger
+            self.assertEqual(console_handler.level, logging.NOTSET)  # Inherits from logger
 
-            file_handler = next(
-                h for h in logger.handlers if isinstance(h, RotatingFileHandler)
-            )
+            file_handler = next(h for h in logger.handlers if isinstance(h, RotatingFileHandler))
             self.assertEqual(file_handler.level, logging.NOTSET)  # Inherits from logger
             self.assertEqual(file_handler.baseFilename, os.path.abspath("test.log"))
             self.assertEqual(file_handler.maxBytes, 1024)
@@ -71,9 +66,7 @@ class TestLoggingUtils(unittest.TestCase):
 
         self.assertEqual(len(logger.handlers), 2)  # Console and file handler
 
-        file_handler = next(
-            h for h in logger.handlers if isinstance(h, RotatingFileHandler)
-        )
+        file_handler = next(h for h in logger.handlers if isinstance(h, RotatingFileHandler))
         self.assertEqual(file_handler.baseFilename, os.path.abspath("custom.log"))
         self.assertEqual(file_handler.maxBytes, 2048)
         self.assertEqual(file_handler.backupCount, 5)
@@ -92,9 +85,7 @@ class TestLoggingUtils(unittest.TestCase):
 
     def test_get_logger(self):
         """Test that get_logger returns a properly configured logger."""
-        with patch(
-            "newsletter_generator.utils.logging_utils.setup_logger"
-        ) as mock_setup:
+        with patch("newsletter_generator.utils.logging_utils.setup_logger") as mock_setup:
             mock_logger = MagicMock()
             mock_setup.return_value = mock_logger
 

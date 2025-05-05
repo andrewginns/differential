@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-import asyncio
 
 from newsletter_generator.ingestion.orchestrator import (
     IngestionOrchestrator,
@@ -95,9 +94,7 @@ class TestIngestionOrchestrator:
     @patch(
         "newsletter_generator.ingestion.orchestrator.IngestionOrchestrator.determine_content_type"
     )
-    async def test_ingest_url_unsupported_content_type(
-        self, mock_determine_content_type
-    ):
+    async def test_ingest_url_unsupported_content_type(self, mock_determine_content_type):
         """Test that ingest_url raises ValueError for unsupported content types."""
         mock_determine_content_type.return_value = "unsupported"
 
@@ -119,9 +116,7 @@ class TestIngestionOrchestrator:
             return_value={"markdown": "# Test", "html": "<h1>Test</h1>"}
         )
         orchestrator.html_parser.parse = MagicMock(return_value="# Parsed Test")
-        orchestrator.standardiser.standardise = MagicMock(
-            return_value="# Standardised Test"
-        )
+        orchestrator.standardiser.standardise = MagicMock(return_value="# Standardised Test")
 
         content, metadata = await orchestrator.ingest_url("https://example.com")
 
@@ -145,9 +140,7 @@ class TestIngestionOrchestrator:
         orchestrator = IngestionOrchestrator()
         orchestrator.pdf_fetcher.fetch = AsyncMock(return_value=b"PDF content")
         orchestrator.pdf_parser.parse = MagicMock(return_value="# Parsed PDF")
-        orchestrator.standardiser.standardise = MagicMock(
-            return_value="# Standardised PDF"
-        )
+        orchestrator.standardiser.standardise = MagicMock(return_value="# Standardised PDF")
 
         content, metadata = await orchestrator.ingest_url("https://example.com/doc.pdf")
 
@@ -156,9 +149,7 @@ class TestIngestionOrchestrator:
         assert metadata["source_type"] == "pdf"
         assert metadata["status"] == "pending_ai"
 
-        orchestrator.pdf_fetcher.fetch.assert_called_once_with(
-            "https://example.com/doc.pdf"
-        )
+        orchestrator.pdf_fetcher.fetch.assert_called_once_with("https://example.com/doc.pdf")
         orchestrator.pdf_parser.parse.assert_called_once_with(b"PDF content")
         orchestrator.standardiser.standardise.assert_called_once_with("# Parsed PDF")
 
@@ -175,9 +166,7 @@ class TestIngestionOrchestrator:
             return_value=[{"text": "Transcript", "start": 0}]
         )
         orchestrator.youtube_parser.parse = MagicMock(return_value="# Parsed YouTube")
-        orchestrator.standardiser.standardise = MagicMock(
-            return_value="# Standardised YouTube"
-        )
+        orchestrator.standardiser.standardise = MagicMock(return_value="# Standardised YouTube")
 
         content, metadata = await orchestrator.ingest_url(
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -194,9 +183,7 @@ class TestIngestionOrchestrator:
         orchestrator.youtube_parser.parse.assert_called_once_with(
             [{"text": "Transcript", "start": 0}]
         )
-        orchestrator.standardiser.standardise.assert_called_once_with(
-            "# Parsed YouTube"
-        )
+        orchestrator.standardiser.standardise.assert_called_once_with("# Parsed YouTube")
 
     @pytest.mark.asyncio
     async def test_ingest_url_convenience_function(self):

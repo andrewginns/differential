@@ -6,10 +6,10 @@ ingestion orchestrator.
 """
 
 import re
-from typing import Dict, Any, List, Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, HTTPException, Depends, Query
+from fastapi import FastAPI, Request, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from newsletter_generator.utils.logging_utils import get_logger
@@ -173,9 +173,7 @@ async def receive_webhook(request: Request):
                                 )
 
                                 # Store the content in the storage manager
-                                content_id = storage_manager.store_content(
-                                    content, metadata
-                                )
+                                content_id = storage_manager.store_content(content, metadata)
 
                                 logger.info(
                                     f"Successfully processed and stored URL: {url} with content_id: {content_id}"

@@ -1,1 +1,1 @@
-"""Utility functions for the newsletter generator.""" 
+"""Utility functions for the newsletter generator."""

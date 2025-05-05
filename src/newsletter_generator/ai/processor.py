@@ -4,11 +4,10 @@ This module integrates PydanticAI for content processing, categorisation,
 and summarisation of technical content with support for multiple LLM providers.
 """
 
-import os
 import json
 import hashlib
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, Literal
+from typing import Dict, Any, List, Optional
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -48,9 +47,7 @@ class CategoryOutput(BaseModel):
         description="Secondary categories if applicable", max_items=3
     )
     tags: List[str] = Field(description="Relevant tags", max_items=5)
-    confidence: float = Field(
-        description="Confidence score between 0.0 and 1.0", ge=0.0, le=1.0
-    )
+    confidence: float = Field(description="Confidence score between 0.0 and 1.0", ge=0.0, le=1.0)
 
 
 class InsightsOutput(BaseModel):
@@ -73,13 +70,13 @@ class RelevanceOutput(BaseModel):
 
 class IntroductionOutput(BaseModel):
     """Pydantic model for newsletter introduction output."""
-    
+
     introduction: str = Field(description="The formatted newsletter introduction text")
 
 
 class SectionOutput(BaseModel):
     """Pydantic model for newsletter section output."""
-    
+
     section: str = Field(description="The formatted newsletter section text in Markdown")
 
 
@@ -108,9 +105,7 @@ class AIProcessor:
 
         # Define the models
         self.openai_model = OpenAIModel("o4-mini")
-        self.gemini_model = GeminiModel(
-            "gemini-2.5-pro-preview-03-25", provider="google-vertex"
-        )
+        self.gemini_model = GeminiModel("gemini-2.5-pro-preview-03-25", provider="google-vertex")
 
         # Set the current model based on provider
         self.current_model = self._get_model_for_provider(provider)
@@ -158,7 +153,7 @@ class AIProcessor:
             
             Keep your summary clear, accurate, and focused on the technical aspects.
             Remove marketing language and focus on factual information.
-            """
+            """,
         )
         self.summary_agent.instrument_all()
 
@@ -290,14 +285,10 @@ class AIProcessor:
                 )
                 return None
 
-        logger.info(
-            f"❓ CACHE MISS: No cached {step_name} data found for cache entry '{cache_id}'"
-        )
+        logger.info(f"❓ CACHE MISS: No cached {step_name} data found for cache entry '{cache_id}'")
         return None
 
-    def _save_to_cache(
-        self, file_path: Path, data: Any, step_name: str, cache_id: str
-    ) -> None:
+    def _save_to_cache(self, file_path: Path, data: Any, step_name: str, cache_id: str) -> None:
         """Save data to cache file.
 
         Args:
@@ -313,9 +304,7 @@ class AIProcessor:
                 f"💾 CACHE SAVED: {step_name} data for cache entry '{cache_id}' saved to {file_path}"
             )
         except Exception as e:
-            logger.error(
-                f"❌ CACHE ERROR: Failed to save {step_name} data to {file_path}: {e}"
-            )
+            logger.error(f"❌ CACHE ERROR: Failed to save {step_name} data to {file_path}: {e}")
 
     def categorise_content(
         self,
@@ -347,9 +336,7 @@ class AIProcessor:
             # Generate cache_id if not provided
             if cache_id is None:
                 cache_id = self._get_cache_key(content)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -357,9 +344,7 @@ class AIProcessor:
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(
-                    cache_file, "categorisation", cache_id
-                )
+                cached_data = self._check_cache(cache_file, "categorisation", cache_id)
                 if cached_data:
                     return cached_data
             else:
@@ -381,9 +366,7 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache(
-                cache_file, categorisation, "categorisation", cache_id
-            )
+            self._save_to_cache(cache_file, categorisation, "categorisation", cache_id)
 
             return categorisation
         except Exception as e:
@@ -414,9 +397,7 @@ class AIProcessor:
             # Generate cache_id if not provided
             if cache_id is None:
                 cache_id = self._get_cache_key(content)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -455,9 +436,7 @@ class AIProcessor:
 
             return summary
         except Exception as e:
-            logger.error(
-                f"❌ ERROR: Failed to summarise content for cache entry '{cache_id}': {e}"
-            )
+            logger.error(f"❌ ERROR: Failed to summarise content for cache entry '{cache_id}': {e}")
             raise
 
     def generate_insights(
@@ -480,9 +459,7 @@ class AIProcessor:
             # Generate cache_id if not provided
             if cache_id is None:
                 cache_id = self._get_cache_key(content)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -512,15 +489,11 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache(
-                cache_file, {"insights": insights}, "insights", cache_id
-            )
+            self._save_to_cache(cache_file, {"insights": insights}, "insights", cache_id)
 
             return insights
         except Exception as e:
-            logger.error(
-                f"❌ ERROR: Failed to generate insights for cache entry '{cache_id}': {e}"
-            )
+            logger.error(f"❌ ERROR: Failed to generate insights for cache entry '{cache_id}': {e}")
             raise
 
     def evaluate_relevance(
@@ -546,9 +519,7 @@ class AIProcessor:
             # Generate cache_id if not provided
             if cache_id is None:
                 cache_id = self._get_cache_key(content)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -578,9 +549,7 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache(
-                cache_file, {"relevance_score": relevance}, "relevance", cache_id
-            )
+            self._save_to_cache(cache_file, {"relevance_score": relevance}, "relevance", cache_id)
 
             return relevance
         except Exception as e:
@@ -618,9 +587,7 @@ class AIProcessor:
             # Generate cache_id if not provided
             if cache_id is None:
                 cache_id = self._get_cache_key(content)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -628,9 +595,7 @@ class AIProcessor:
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(
-                    cache_file, "newsletter section", cache_id
-                )
+                cached_data = self._check_cache(cache_file, "newsletter section", cache_id)
                 if cached_data and "section" in cached_data:
                     return cached_data["section"]
             else:
@@ -699,9 +664,7 @@ class AIProcessor:
 
             return section
         except Exception as e:
-            logger.error(
-                f"❌ ERROR: Failed to generate newsletter section for '{cache_id}': {e}"
-            )
+            logger.error(f"❌ ERROR: Failed to generate newsletter section for '{cache_id}': {e}")
             raise
 
     def generate_newsletter_introduction(
@@ -734,9 +697,7 @@ class AIProcessor:
             if cache_id is None:
                 content_to_hash = f"{','.join(categories)}_{total_items}"
                 cache_id = self._get_cache_key(content_to_hash)
-                logger.info(
-                    f"Generated cache ID: {cache_id} (based on cache key)"
-                )
+                logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
             # Set up output directory
             cache_dir = self._get_cache_dir(cache_id)
@@ -744,9 +705,7 @@ class AIProcessor:
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(
-                    cache_file, "newsletter introduction", cache_id
-                )
+                cached_data = self._check_cache(cache_file, "newsletter introduction", cache_id)
                 if cached_data and "introduction" in cached_data:
                     return cached_data["introduction"]
             else:
@@ -852,9 +811,7 @@ def get_ai_processor(
             if provider is None:
                 config_provider = CONFIG.get("MODEL_PROVIDER", "openai").lower()
                 provider = (
-                    ModelProvider.GEMINI
-                    if config_provider == "gemini"
-                    else ModelProvider.OPENAI
+                    ModelProvider.GEMINI if config_provider == "gemini" else ModelProvider.OPENAI
                 )
 
             ai_processor = AIProcessor(provider=provider, cache_base_dir=cache_base_dir)

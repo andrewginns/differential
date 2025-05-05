@@ -6,7 +6,7 @@ variables and default settings.
 
 import os
 import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from dotenv import load_dotenv
 

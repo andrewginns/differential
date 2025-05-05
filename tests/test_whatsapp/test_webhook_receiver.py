@@ -1,7 +1,6 @@
 """Tests for the WhatsApp webhook receiver module."""
 
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -76,7 +75,10 @@ class TestWebhookEndpoints:
 
     def test_verify_webhook_success(self):
         """Test successful webhook verification."""
-        with patch("newsletter_generator.whatsapp.webhook_receiver.CONFIG", {"WHATSAPP_VERIFY_TOKEN": "test_token"}):
+        with patch(
+            "newsletter_generator.whatsapp.webhook_receiver.CONFIG",
+            {"WHATSAPP_VERIFY_TOKEN": "test_token"},
+        ):
             response = self.client.get(
                 "/webhook?hub.mode=subscribe&hub.challenge=1234&hub.verify_token=test_token"
             )
@@ -85,7 +87,10 @@ class TestWebhookEndpoints:
 
     def test_verify_webhook_failure_wrong_token(self):
         """Test webhook verification failure due to wrong token."""
-        with patch("newsletter_generator.whatsapp.webhook_receiver.CONFIG", {"WHATSAPP_VERIFY_TOKEN": "test_token"}):
+        with patch(
+            "newsletter_generator.whatsapp.webhook_receiver.CONFIG",
+            {"WHATSAPP_VERIFY_TOKEN": "test_token"},
+        ):
             response = self.client.get(
                 "/webhook?hub.mode=subscribe&hub.challenge=1234&hub.verify_token=wrong_token"
             )
@@ -94,7 +99,10 @@ class TestWebhookEndpoints:
 
     def test_verify_webhook_failure_wrong_mode(self):
         """Test webhook verification failure due to wrong mode."""
-        with patch("newsletter_generator.whatsapp.webhook_receiver.CONFIG", {"WHATSAPP_VERIFY_TOKEN": "test_token"}):
+        with patch(
+            "newsletter_generator.whatsapp.webhook_receiver.CONFIG",
+            {"WHATSAPP_VERIFY_TOKEN": "test_token"},
+        ):
             response = self.client.get(
                 "/webhook?hub.mode=wrong_mode&hub.challenge=1234&hub.verify_token=test_token"
             )
@@ -116,23 +124,21 @@ class TestWebhookEndpoints:
                                     {
                                         "id": "wamid.123456789",
                                         "type": "text",
-                                        "text": {
-                                            "body": "Check out https://example.com"
-                                        },
-                                        "from": "1234567890"
+                                        "text": {"body": "Check out https://example.com"},
+                                        "from": "1234567890",
                                     }
                                 ]
                             }
                         }
-                    ]
+                    ],
                 }
-            ]
+            ],
         }
-        
+
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
-        
+
         mock_logger.info.assert_any_call("Extracted 1 URLs from message: ['https://example.com']")
         mock_logger.info.assert_any_call("URL to process: https://example.com")
 
@@ -151,43 +157,35 @@ class TestWebhookEndpoints:
                                     {
                                         "id": "wamid.123456789",
                                         "type": "text",
-                                        "text": {
-                                            "body": "This message has no URLs"
-                                        },
-                                        "from": "1234567890"
+                                        "text": {"body": "This message has no URLs"},
+                                        "from": "1234567890",
                                     }
                                 ]
                             }
                         }
-                    ]
+                    ],
                 }
-            ]
+            ],
         }
-        
+
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
-        
+
         mock_logger.info.assert_any_call("No URLs found in message")
 
     def test_receive_webhook_with_non_message_object(self):
         """Test receiving a webhook with a non-message object."""
-        payload = {
-            "object": "not_whatsapp",
-            "entry": []
-        }
-        
+        payload = {"object": "not_whatsapp", "entry": []}
+
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
 
     def test_receive_webhook_with_empty_entry(self):
         """Test receiving a webhook with an empty entry list."""
-        payload = {
-            "object": "whatsapp_business_account",
-            "entry": []
-        }
-        
+        payload = {"object": "whatsapp_business_account", "entry": []}
+
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
@@ -203,19 +201,15 @@ class TestWebhookEndpoints:
                         {
                             "value": {
                                 "messages": [
-                                    {
-                                        "id": "wamid.123456789",
-                                        "type": "image",
-                                        "from": "1234567890"
-                                    }
+                                    {"id": "wamid.123456789", "type": "image", "from": "1234567890"}
                                 ]
                             }
                         }
-                    ]
+                    ],
                 }
-            ]
+            ],
         }
-        
+
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}

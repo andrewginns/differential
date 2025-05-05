@@ -48,9 +48,7 @@ def setup_logger(
     if logger.handlers:
         logger.handlers.clear()
 
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
@@ -62,9 +60,7 @@ def setup_logger(
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
-        file_handler = RotatingFileHandler(
-            log_file, maxBytes=max_bytes, backupCount=backup_count
-        )
+        file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

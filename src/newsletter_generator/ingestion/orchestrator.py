@@ -5,8 +5,7 @@ and routing to appropriate fetchers, parsers, and standardisers.
 """
 
 import re
-import asyncio
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Tuple
 from urllib.parse import urlparse
 
 from tenacity import (
@@ -16,7 +15,6 @@ from tenacity import (
     retry_if_exception_type,
 )
 import aiohttp
-import requests
 
 from newsletter_generator.utils.logging_utils import get_logger
 
@@ -83,9 +81,7 @@ class IngestionOrchestrator:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.head(
-                    url, allow_redirects=True, timeout=10
-                ) as response:
+                async with session.head(url, allow_redirects=True, timeout=10) as response:
                     content_type = response.headers.get("Content-Type", "").lower()
 
                     if "application/pdf" in content_type:

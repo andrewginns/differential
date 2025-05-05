@@ -32,11 +32,7 @@ def main():
 
     try:
         # Map string choice to ModelProvider enum
-        provider = (
-            ModelProvider.OPENAI
-            if args.model_provider == "openai"
-            else ModelProvider.GEMINI
-        )
+        provider = ModelProvider.OPENAI if args.model_provider == "openai" else ModelProvider.GEMINI
         result = assemble_newsletter(days=args.days, model_provider=provider)
         if result:
             print(f"Newsletter generated successfully: {result}")

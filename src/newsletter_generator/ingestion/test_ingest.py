@@ -6,7 +6,6 @@ without requiring the WhatsApp webhook.
 
 import asyncio
 import argparse
-import sys
 from typing import List
 
 from newsletter_generator.utils.logging_utils import get_logger
@@ -67,9 +66,7 @@ async def test_ingest_multiple_urls(urls: List[str]) -> None:
 
 def main():
     """Main entry point for the test script."""
-    parser = argparse.ArgumentParser(
-        description="Test the ingestion pipeline with URLs."
-    )
+    parser = argparse.ArgumentParser(description="Test the ingestion pipeline with URLs.")
     parser.add_argument("urls", nargs="+", help="URLs to ingest")
 
     args = parser.parse_args()

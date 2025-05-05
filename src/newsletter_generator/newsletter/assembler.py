@@ -7,7 +7,7 @@ final Markdown document.
 
 import os
 import datetime
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
@@ -37,9 +37,7 @@ class NewsletterAssembler:
 
         os.makedirs(self.output_dir, exist_ok=True)
 
-        logger.info(
-            f"Initialised newsletter assembler with output directory: {self.output_dir}"
-        )
+        logger.info(f"Initialised newsletter assembler with output directory: {self.output_dir}")
 
     def collect_weekly_content(self, days: int = 7) -> List[Dict[str, Any]]:
         """Collect content from the past week.
@@ -75,9 +73,7 @@ class NewsletterAssembler:
                         {"id": content_id, "text": content_text, "metadata": metadata}
                     )
 
-            logger.info(
-                f"Collected {len(weekly_content)} content items from the past {days} days"
-            )
+            logger.info(f"Collected {len(weekly_content)} content items from the past {days} days")
 
             return weekly_content
         except Exception as e:
@@ -103,19 +99,21 @@ class NewsletterAssembler:
             for item in content_items:
                 # Get the fingerprint from metadata
                 fingerprint = item["metadata"].get("content_fingerprint")
-                
+
                 # Skip if we've already included content with this fingerprint
                 if fingerprint and fingerprint in processed_fingerprints:
-                    logger.info(f"Skipping duplicate content {item['id']} with existing fingerprint in newsletter")
+                    logger.info(
+                        f"Skipping duplicate content {item['id']} with existing fingerprint in newsletter"
+                    )
                     continue
-                    
+
                 # Add fingerprint to tracking set if available
                 if fingerprint:
                     processed_fingerprints.add(fingerprint)
-                
+
                 # Continue with normal categorisation
                 if "category" not in item["metadata"]:
-                    with logfire.span('categorise_content', attributes={"content_id": item["id"]}):
+                    with logfire.span("categorise_content", attributes={"content_id": item["id"]}):
                         categorisation = processor.categorise_content(item["text"])
                         category = categorisation["primary_category"]
 
@@ -135,7 +133,9 @@ class NewsletterAssembler:
                 categorised_content[category].append(item)
 
             logger.info(f"Organised content into {len(categorised_content)} categories")
-            logger.info(f"Filtered out {len(processed_fingerprints)} duplicate content items using fingerprints")
+            logger.info(
+                f"Filtered out {len(processed_fingerprints)} duplicate content items using fingerprints"
+            )
 
             return categorised_content
         except Exception as e:
@@ -165,14 +165,17 @@ class NewsletterAssembler:
             content_summary = None
             if category_sections:
                 # Create a summary of the actual content
-                with logfire.span('summarise_all_sections', attributes={"category_count": len(category_sections)}):
+                with logfire.span(
+                    "summarise_all_sections", attributes={"category_count": len(category_sections)}
+                ):
                     all_sections_text = "\n".join(category_sections.values())
-                    content_summary = processor.summarise_content(
-                        all_sections_text, max_length=500
-                    )
+                    content_summary = processor.summarise_content(all_sections_text, max_length=500)
 
             # Use the dedicated newsletter introduction function
-            with logfire.span('generate_newsletter_introduction', attributes={"categories": categories, "total_items": total_items}):
+            with logfire.span(
+                "generate_newsletter_introduction",
+                attributes={"categories": categories, "total_items": total_items},
+            ):
                 newsletter_introduction = processor.generate_newsletter_introduction(
                     categories=categories,
                     total_items=total_items,
@@ -199,9 +202,7 @@ class NewsletterAssembler:
             logger.error(f"Error generating introduction: {e}")
             raise
 
-    def generate_category_section(
-        self, category: str, items: List[Dict[str, Any]]
-    ) -> str:
+    def generate_category_section(self, category: str, items: List[Dict[str, Any]]) -> str:
         """Generate a section for a specific category.
 
         Args:
@@ -221,7 +222,7 @@ class NewsletterAssembler:
             )
 
             section = f"\n\n## {category}\n\n"
-            
+
             # Keep track of content sections already added to prevent duplication
             added_content_fingerprints = set()
 
@@ -231,9 +232,12 @@ class NewsletterAssembler:
                 content_id = item["id"]
                 fingerprint = item["metadata"].get("content_fingerprint")
 
-                with logfire.span('process_content_item', attributes={"content_id": content_id, "title": title, "category": category}):
+                with logfire.span(
+                    "process_content_item",
+                    attributes={"content_id": content_id, "title": title, "category": category},
+                ):
                     if "summary" not in item["metadata"]:
-                        with logfire.span('generate_summary'):
+                        with logfire.span("generate_summary"):
                             summary = processor.summarise_content(item["text"], max_length=100)
                             item["metadata"]["summary"] = summary
                             storage_manager.update_metadata(item["id"], item["metadata"])
@@ -246,18 +250,18 @@ class NewsletterAssembler:
                             f"Skipping duplicate content ID {content_id} ({title}) in category '{category}' based on fingerprint"
                         )
                         continue
-                    
+
                     added_content_fingerprints.add(fingerprint)
-                    
-                    with logfire.span('generate_newsletter_section'):
+
+                    with logfire.span("generate_newsletter_section"):
                         content_section = processor.generate_newsletter_section(
-                            title=title, 
-                            content=item["text"], 
-                            category=category, 
+                            title=title,
+                            content=item["text"],
+                            category=category,
                             max_length=200,
-                            cache_id=content_id
+                            cache_id=content_id,
                         )
-                    
+
                     section += f"{content_section}\n\n"
 
                     if url:
@@ -289,10 +293,13 @@ class NewsletterAssembler:
             if model_provider is not None:
                 processor.get_ai_processor(provider=model_provider)
 
-            with logfire.span('newsletter_assembly', attributes={"days": days, "model_provider": str(model_provider)}):
+            with logfire.span(
+                "newsletter_assembly",
+                attributes={"days": days, "model_provider": str(model_provider)},
+            ):
                 logfire.info(f"Starting newsletter assembly for the past {days} days")
-                
-                with logfire.span('collect_weekly_content'):
+
+                with logfire.span("collect_weekly_content"):
                     content_items = self.collect_weekly_content(days=days)
 
                 if not content_items:
@@ -301,25 +308,25 @@ class NewsletterAssembler:
 
                 # Track content fingerprints that have been processed to avoid duplicate content
                 processed_fingerprints = set()
-                
+
                 # Create a filtered categorised content dictionary
-                with logfire.span('organise_by_category'):
+                with logfire.span("organise_by_category"):
                     categorised_content = self.organise_by_category(content_items)
                     filtered_categorised_content = {}
-                    
+
                     # First pass: filter out duplicate content items
                     for category, items in categorised_content.items():
                         filtered_items = []
                         for item in items:
                             fingerprint = item["metadata"].get("content_fingerprint")
-                            
+
                             # Check if this content has been seen before by fingerprint
                             if fingerprint and fingerprint in processed_fingerprints:
                                 logger.warning(
                                     f"Skipping duplicate content ID {item['id']} in category '{category}' based on fingerprint"
                                 )
                                 continue
-                                
+
                             # Fall back to content_id for backward compatibility
                             if fingerprint:
                                 processed_fingerprints.add(fingerprint)
@@ -331,28 +338,32 @@ class NewsletterAssembler:
                                     )
                                     continue
                                 processed_fingerprints.add(content_id)
-                                
+
                             filtered_items.append(item)
-                        
+
                         if filtered_items:
                             filtered_categorised_content[category] = filtered_items
-                
+
                 # Use the filtered content for the rest of the process
                 categorised_content = filtered_categorised_content
 
                 # Generate category sections first
                 category_sections = {}
-                with logfire.span('generate_category_sections', attributes={"categories": list(categorised_content.keys())}):
+                with logfire.span(
+                    "generate_category_sections",
+                    attributes={"categories": list(categorised_content.keys())},
+                ):
                     for category, items in sorted(categorised_content.items()):
-                        with logfire.span('generate_category_section', attributes={"category": category, "item_count": len(items)}):
+                        with logfire.span(
+                            "generate_category_section",
+                            attributes={"category": category, "item_count": len(items)},
+                        ):
                             section = self.generate_category_section(category, items)
                             category_sections[category] = section
 
                 # Generate introduction after all content has been processed
-                with logfire.span('generate_introduction'):
-                    newsletter = self.generate_introduction(
-                        categorised_content, category_sections
-                    )
+                with logfire.span("generate_introduction"):
+                    newsletter = self.generate_introduction(categorised_content, category_sections)
 
                 # Add all category sections to the newsletter
                 for category, section in category_sections.items():
@@ -364,7 +375,7 @@ class NewsletterAssembler:
                 filename = f"newsletter_{date_str}.md"
                 filepath = os.path.join(self.output_dir, filename)
 
-                with logfire.span('write_newsletter_to_file', attributes={"filepath": filepath}):
+                with logfire.span("write_newsletter_to_file", attributes={"filepath": filepath}):
                     with open(filepath, "w") as f:
                         f.write(newsletter)
 
@@ -375,9 +386,7 @@ class NewsletterAssembler:
             logger.error(f"Error assembling newsletter: {e}")
             raise
 
-    def generate_related_content_section(
-        self, content_id: str, max_items: int = 3
-    ) -> str:
+    def generate_related_content_section(self, content_id: str, max_items: int = 3) -> str:
         """Generate a 'Related Content' section for a specific content item.
 
         Args:
@@ -389,14 +398,12 @@ class NewsletterAssembler:
         """
         try:
             content = storage_manager.get_content(content_id)
-            metadata = storage_manager.get_metadata(content_id)
+            _ = storage_manager.get_metadata(content_id)
 
             related_items = lightrag_manager.search(
                 query=content,
                 limit=max_items + 1,  # +1 to account for the item itself
-                filter_metadata={
-                    "content_id": {"$ne": content_id}
-                },  # Exclude the item itself
+                filter_metadata={"content_id": {"$ne": content_id}},  # Exclude the item itself
             )
 
             if not related_items:
@@ -513,9 +520,7 @@ def assemble_newsletter(days: int = 7, model_provider=None) -> str:
     Returns:
         The path to the generated newsletter file.
     """
-    return get_newsletter_assembler().assemble_newsletter(
-        days=days, model_provider=model_provider
-    )
+    return get_newsletter_assembler().assemble_newsletter(days=days, model_provider=model_provider)
 
 
 def generate_related_content_section(content_id: str, max_items: int = 3) -> str:

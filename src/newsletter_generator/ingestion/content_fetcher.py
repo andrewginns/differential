@@ -7,7 +7,7 @@ This module provides classes for fetching content from different sources:
 """
 
 import asyncio
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Dict, Any, List
 
 import requests
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
@@ -67,12 +67,8 @@ class HTMLContentFetcher:
                 )
 
                 if not result.success:
-                    logger.error(
-                        f"Failed to fetch HTML content from {url}: {result.error_message}"
-                    )
-                    raise Exception(
-                        f"Failed to fetch HTML content: {result.error_message}"
-                    )
+                    logger.error(f"Failed to fetch HTML content from {url}: {result.error_message}")
+                    raise Exception(f"Failed to fetch HTML content: {result.error_message}")
 
                 # Log the available attributes for debugging
                 logger.debug(f"Available attributes in CrawlResult: {dir(result)}")
@@ -133,9 +129,7 @@ class PDFContentFetcher:
 
         try:
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, lambda: requests.get(url, timeout=30)
-            )
+            response = await loop.run_in_executor(None, lambda: requests.get(url, timeout=30))
 
             response.raise_for_status()
 
@@ -217,18 +211,14 @@ class YouTubeContentFetcher:
                 try:
                     transcript = transcript_list.find_generated_transcript(["en"])
                 except Exception:
-                    transcript = transcript_list.find_transcript(
-                        ["en", "es", "fr", "de"]
-                    )
+                    transcript = transcript_list.find_transcript(["en", "es", "fr", "de"])
 
-            transcript_data = await loop.run_in_executor(
-                None, lambda: transcript.fetch()
-            )
+            transcript_data = await loop.run_in_executor(None, lambda: transcript.fetch())
 
             return transcript_data
         except TranscriptsDisabled:
             logger.error(f"Transcripts are disabled for video: {url}")
-            raise Exception(f"Transcripts are disabled for this YouTube video")
+            raise Exception("Transcripts are disabled for this YouTube video")
         except Exception as e:
             logger.error(f"Error fetching YouTube transcript from {url}: {e}")
             raise

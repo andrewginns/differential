@@ -6,12 +6,11 @@ This module provides classes for parsing content from different sources:
 - YouTube transcripts using youtube-transcript-api
 """
 
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any
 
 import fitz  # PyMuPDF
 import trafilatura
 import re
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 from newsletter_generator.utils.logging_utils import get_logger
 
@@ -20,54 +19,54 @@ logger = get_logger("ingestion.content_parser")
 
 class HTMLContentParser:
     """Parses HTML content.
-    
+
     This class primarily relies on Crawl4AI's built-in Markdown generation,
     with Trafilatura as a fallback or supplementary method.
     """
-    
+
     def __init__(self):
         """Initialise the HTML content parser."""
         pass
-    
+
     def parse(self, content: Dict[str, Any], url: str) -> str:
         """Parse HTML content.
-        
+
         Args:
             content: The content dictionary from the HTML fetcher, containing
                 'markdown', 'html', and other metadata.
             url: The source URL.
-            
+
         Returns:
             The parsed content as Markdown.
-            
+
         Raises:
             Exception: If there's an error parsing the content.
         """
         logger.info(f"Parsing HTML content from {url}")
-        
+
         try:
-            if content.get('markdown') and len(content['markdown']) > 100:
+            if content.get("markdown") and len(content["markdown"]) > 100:
                 logger.debug("Using Crawl4AI's Markdown output")
-                return content['markdown']
-            
+                return content["markdown"]
+
             logger.debug("Falling back to Trafilatura for HTML parsing")
-            html = content.get('html', '')
+            html = content.get("html", "")
             if not html:
                 raise Exception("No HTML content available for parsing")
-            
+
             extracted_text = trafilatura.extract(
                 html,
-                output_format='markdown',
+                output_format="markdown",
                 include_links=True,
                 include_images=True,
                 include_tables=True,
             )
-            
+
             if not extracted_text:
                 logger.warning(f"Trafilatura failed to extract content from {url}")
-                title = content.get('title', 'Untitled')
+                title = content.get("title", "Untitled")
                 return f"# {title}\n\n*Content extraction failed*"
-            
+
             return extracted_text
         except Exception as e:
             logger.error(f"Error parsing HTML content from {url}: {e}")
@@ -76,47 +75,47 @@ class HTMLContentParser:
 
 class PDFContentParser:
     """Parses PDF content using PyMuPDF (Fitz).
-    
+
     This class extracts text from PDF documents.
     """
-    
+
     def __init__(self):
         """Initialise the PDF content parser."""
         pass
-    
+
     def parse(self, content: bytes) -> str:
         """Parse PDF content.
-        
+
         Args:
             content: The raw PDF content as bytes.
-            
+
         Returns:
             The extracted text as Markdown.
-            
+
         Raises:
             Exception: If there's an error parsing the PDF.
         """
         logger.info("Parsing PDF content")
-        
+
         try:
             doc = fitz.open(stream=content, filetype="pdf")
-            
+
             text_parts = []
             for page_num, page in enumerate(doc):
                 text = page.get_text()
                 if text.strip():
                     text_parts.append(text)
-            
+
             doc.close()
-            
+
             if not text_parts:
                 logger.warning("No text extracted from PDF")
                 return "# PDF Document\n\n*No text content could be extracted*"
-            
+
             full_text = "\n\n".join(text_parts)
-            
+
             markdown = f"# PDF Document\n\n{full_text}"
-            
+
             return markdown
         except Exception as e:
             logger.error(f"Error parsing PDF content: {e}")
@@ -149,8 +148,8 @@ class YouTubeContentParser:
         # Regex to find the video ID from various YouTube URL patterns
         # Covers standard, mobile, short URLs, and embed URLs
         patterns = [
-            r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',  # Standard '?v=' or '/'. Must be 11 chars.
-            r'^([0-9A-Za-z_-]{11})$'           # Direct video ID
+            r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",  # Standard '?v=' or '/'. Must be 11 chars.
+            r"^([0-9A-Za-z_-]{11})$",  # Direct video ID
         ]
 
         for pattern in patterns:
@@ -162,10 +161,10 @@ class YouTubeContentParser:
                     return potential_id
 
         # Basic check if the input itself might be a valid ID (11 chars, specific characters)
-        if re.fullmatch(r'[0-9A-Za-z_-]{11}', url_or_id):
-             return url_or_id
+        if re.fullmatch(r"[0-9A-Za-z_-]{11}", url_or_id):
+            return url_or_id
 
-        return None # Return None if no valid ID pattern is matched
+        return None  # Return None if no valid ID pattern is matched
 
     def parse(self, transcript_data) -> str:
         """Parses YouTube transcript data into formatted Markdown.
@@ -190,25 +189,25 @@ class YouTubeContentParser:
                 # Access FetchedTranscriptSnippet attributes directly
                 text = segment.text.strip()
                 start_time = segment.start
-                
+
                 # Skip empty segments
                 if not text:
                     continue
-                
+
                 # Convert start time to MM:SS format
                 minutes, seconds = divmod(int(start_time), 60)
                 timestamp = f"[{minutes:02d}:{seconds:02d}]"
-                
+
                 # Add formatted line with timestamp
                 formatted_lines.append(f"{timestamp} {text}")
-            
+
             # Join all lines with newlines between them
             transcript_text = "\n".join(formatted_lines)
-            
+
             # Format as Markdown
             markdown = "# YouTube Video Transcript\n\n"
             markdown += transcript_text
-            
+
             return markdown
 
         except Exception as e:

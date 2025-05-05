@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-import asyncio
 
 from newsletter_generator.ingestion.content_fetcher import (
     HTMLContentFetcher,
@@ -97,9 +96,7 @@ class TestPDFContentFetcher:
         result = await fetcher.fetch("https://example.com/doc.pdf")
 
         assert result == b"PDF content"
-        mock_requests_get.assert_called_once_with(
-            "https://example.com/doc.pdf", timeout=30
-        )
+        mock_requests_get.assert_called_once_with("https://example.com/doc.pdf", timeout=30)
 
     @pytest.mark.asyncio
     @patch("newsletter_generator.ingestion.content_fetcher.requests.get")
@@ -114,9 +111,7 @@ class TestPDFContentFetcher:
         result = await fetcher.fetch("https://example.com/doc.txt")
 
         assert result == b"Not a PDF"
-        mock_requests_get.assert_called_once_with(
-            "https://example.com/doc.txt", timeout=30
-        )
+        mock_requests_get.assert_called_once_with("https://example.com/doc.txt", timeout=30)
 
     @pytest.mark.asyncio
     @patch("newsletter_generator.ingestion.content_fetcher.requests.get")
@@ -131,9 +126,7 @@ class TestPDFContentFetcher:
         with pytest.raises(Exception):
             await fetcher.fetch("https://example.com/doc.pdf")
 
-        mock_requests_get.assert_called_once_with(
-            "https://example.com/doc.pdf", timeout=30
-        )
+        mock_requests_get.assert_called_once_with("https://example.com/doc.pdf", timeout=30)
 
 
 class TestYouTubeContentFetcher:
@@ -142,9 +135,7 @@ class TestYouTubeContentFetcher:
     def test_extract_video_id_watch_url(self):
         """Test extracting video ID from watch URL."""
         fetcher = YouTubeContentFetcher()
-        video_id = fetcher._extract_video_id(
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        )
+        video_id = fetcher._extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         assert video_id == "dQw4w9WgXcQ"
 
     def test_extract_video_id_short_url(self):
@@ -160,9 +151,7 @@ class TestYouTubeContentFetcher:
             fetcher._extract_video_id("https://example.com")
 
     @pytest.mark.asyncio
-    @patch(
-        "newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts"
-    )
+    @patch("newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts")
     async def test_fetch_success(self, mock_list_transcripts):
         """Test successful YouTube transcript fetching."""
         mock_transcript_list = MagicMock()
@@ -180,9 +169,7 @@ class TestYouTubeContentFetcher:
         mock_list_transcripts.assert_called_once_with("dQw4w9WgXcQ")
 
     @pytest.mark.asyncio
-    @patch(
-        "newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts"
-    )
+    @patch("newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts")
     async def test_fetch_generated_transcript(self, mock_list_transcripts):
         """Test YouTube transcript fetching with generated transcript."""
         mock_transcript_list = MagicMock()
@@ -201,9 +188,7 @@ class TestYouTubeContentFetcher:
         mock_list_transcripts.assert_called_once_with("dQw4w9WgXcQ")
 
     @pytest.mark.asyncio
-    @patch(
-        "newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts"
-    )
+    @patch("newsletter_generator.ingestion.content_fetcher.YouTubeTranscriptApi.list_transcripts")
     async def test_fetch_transcripts_disabled(self, mock_list_transcripts):
         """Test YouTube transcript fetching with transcripts disabled."""
         from youtube_transcript_api import TranscriptsDisabled
