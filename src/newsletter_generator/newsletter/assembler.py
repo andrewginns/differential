@@ -97,8 +97,23 @@ class NewsletterAssembler:
         """
         try:
             categorised_content = {}
+            # Use content fingerprints for deduplication
+            processed_fingerprints = set()
 
             for item in content_items:
+                # Get the fingerprint from metadata
+                fingerprint = item["metadata"].get("content_fingerprint")
+                
+                # Skip if we've already included content with this fingerprint
+                if fingerprint and fingerprint in processed_fingerprints:
+                    logger.info(f"Skipping duplicate content {item['id']} with existing fingerprint in newsletter")
+                    continue
+                    
+                # Add fingerprint to tracking set if available
+                if fingerprint:
+                    processed_fingerprints.add(fingerprint)
+                
+                # Continue with normal categorization
                 if "category" not in item["metadata"]:
                     with logfire.span('categorise_content', attributes={"content_id": item["id"]}):
                         categorisation = processor.categorise_content(item["text"])
@@ -120,6 +135,7 @@ class NewsletterAssembler:
                 categorised_content[category].append(item)
 
             logger.info(f"Organised content into {len(categorised_content)} categories")
+            logger.info(f"Filtered out {len(processed_fingerprints)} duplicate content items using fingerprints")
 
             return categorised_content
         except Exception as e:
@@ -207,12 +223,13 @@ class NewsletterAssembler:
             section = f"\n\n## {category}\n\n"
             
             # Keep track of content sections already added to prevent duplication
-            added_content_sections = set()
+            added_content_fingerprints = set()
 
             for item in sorted_items:
                 title = item["metadata"].get("title", "Untitled")
                 url = item["metadata"].get("url", "")
                 content_id = item["id"]
+                fingerprint = item["metadata"].get("content_fingerprint")
 
                 with logfire.span('process_content_item', attributes={"content_id": content_id, "title": title, "category": category}):
                     if "summary" not in item["metadata"]:
@@ -223,18 +240,24 @@ class NewsletterAssembler:
                     else:
                         summary = item["metadata"]["summary"]
 
-                    # Use a combination of content_id and title as the content hash
-                    # This ensures we don't repeat the same content even if the AI generates
-                    # slightly different text
-                    content_hash = hash(f"{content_id}:{title}")
-                    
-                    if content_hash in added_content_sections:
+                    # Check for duplicate content using fingerprint if available
+                    if fingerprint and fingerprint in added_content_fingerprints:
                         logger.warning(
-                            f"Skipping duplicate content ID {content_id} ({title}) in category '{category}'"
+                            f"Skipping duplicate content ID {content_id} ({title}) in category '{category}' based on fingerprint"
                         )
                         continue
                     
-                    added_content_sections.add(content_hash)
+                    # Fall back to content_id:title hash if no fingerprint (for backward compatibility)
+                    if not fingerprint:
+                        content_hash = hash(f"{content_id}:{title}")
+                        if content_hash in added_content_fingerprints:
+                            logger.warning(
+                                f"Skipping duplicate content ID {content_id} ({title}) in category '{category}' based on hash"
+                            )
+                            continue
+                        added_content_fingerprints.add(content_hash)
+                    else:
+                        added_content_fingerprints.add(fingerprint)
                     
                     with logfire.span('generate_newsletter_section'):
                         content_section = processor.generate_newsletter_section(
@@ -253,7 +276,7 @@ class NewsletterAssembler:
                     section += "---\n\n"
 
             logger.info(
-                f"Generated section for category '{category}' with {len(added_content_sections)} unique items"
+                f"Generated section for category '{category}' with {len(added_content_fingerprints)} unique items"
             )
 
             return section
@@ -286,8 +309,8 @@ class NewsletterAssembler:
                     logger.warning(f"No content found in the past {days} days")
                     return None
 
-                # Track content IDs that have been processed to avoid duplicate content
-                processed_content_ids = set()
+                # Track content fingerprints that have been processed to avoid duplicate content
+                processed_fingerprints = set()
                 
                 # Create a filtered categorised content dictionary
                 with logfire.span('organise_by_category'):
@@ -298,13 +321,28 @@ class NewsletterAssembler:
                     for category, items in categorised_content.items():
                         filtered_items = []
                         for item in items:
-                            if item["id"] not in processed_content_ids:
-                                processed_content_ids.add(item["id"])
-                                filtered_items.append(item)
-                            else:
+                            fingerprint = item["metadata"].get("content_fingerprint")
+                            
+                            # Check if this content has been seen before by fingerprint
+                            if fingerprint and fingerprint in processed_fingerprints:
                                 logger.warning(
-                                    f"Skipping duplicate content ID {item['id']} in category '{category}'"
+                                    f"Skipping duplicate content ID {item['id']} in category '{category}' based on fingerprint"
                                 )
+                                continue
+                                
+                            # Fall back to content_id for backward compatibility
+                            if fingerprint:
+                                processed_fingerprints.add(fingerprint)
+                            else:
+                                content_id = item["id"]
+                                if content_id in processed_fingerprints:
+                                    logger.warning(
+                                        f"Skipping duplicate content ID {content_id} in category '{category}'"
+                                    )
+                                    continue
+                                processed_fingerprints.add(content_id)
+                                
+                            filtered_items.append(item)
                         
                         if filtered_items:
                             filtered_categorised_content[category] = filtered_items

@@ -13,6 +13,11 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
+from newsletter_generator.utils.deduplication import (
+    get_url_hash, 
+    generate_content_fingerprint,
+    calculate_content_similarity
+)
 
 logger = get_logger("storage.manager")
 
@@ -34,6 +39,69 @@ class StorageManager:
         self.data_dir = data_dir or CONFIG.get("DATA_DIR", "data")
 
         os.makedirs(self.data_dir, exist_ok=True)
+        
+        # Initialize indices for deduplication
+        self.url_hash_index = {}  # url_hash -> content_id
+        self.fingerprint_index = {}  # content_fingerprint -> content_id
+        self._build_deduplication_indices()
+
+    def _build_deduplication_indices(self):
+        """Build indices for URL-based and content-based deduplication."""
+        try:
+            all_content = self.list_content()
+            
+            for content_id, metadata in all_content.items():
+                # Check for URL hash in metadata
+                url = metadata.get("url", "")
+                if url:
+                    url_hash = metadata.get("url_hash")
+                    if not url_hash:
+                        # Calculate hash if not present
+                        url_hash = get_url_hash(url)
+                    self.url_hash_index[url_hash] = content_id
+                
+                # Check for content fingerprint in metadata
+                fingerprint = metadata.get("content_fingerprint")
+                if fingerprint:
+                    self.fingerprint_index[fingerprint] = content_id
+            
+            logger.info(f"Built deduplication indices with {len(self.url_hash_index)} URLs and {len(self.fingerprint_index)} content fingerprints")
+        except Exception as e:
+            logger.error(f"Error building deduplication indices: {e}")
+
+    def _find_by_url_hash(self, url_hash: str) -> Optional[str]:
+        """Find content ID by URL hash.
+        
+        Args:
+            url_hash: The URL hash to search for.
+            
+        Returns:
+            The content ID if found, None otherwise.
+        """
+        return self.url_hash_index.get(url_hash)
+
+    def _find_by_content_fingerprint(self, fingerprint: str) -> Optional[str]:
+        """Find content ID by content fingerprint.
+        
+        Args:
+            fingerprint: The content fingerprint to search for.
+            
+        Returns:
+            The content ID if found, None otherwise.
+        """
+        return self.fingerprint_index.get(fingerprint)
+
+    def _calculate_similarity(self, content1: str, content2: str) -> float:
+        """Calculate similarity between two content strings.
+        
+        Args:
+            content1: First content string.
+            content2: Second content string.
+            
+        Returns:
+            Similarity score between 0.0 and 1.0.
+        """
+        return calculate_content_similarity(content1, content2)
 
     def _generate_file_path(self, url: str, source_type: str) -> str:
         """Generate a file path for a URL.
@@ -75,11 +143,36 @@ class StorageManager:
         if "source_type" not in metadata:
             raise ValueError("Metadata must include 'source_type'")
 
+        # Check for URL-based duplicates
+        url = metadata["url"]
+        url_hash = get_url_hash(url)
+        existing_id = self._find_by_url_hash(url_hash)
+        
+        if existing_id:
+            logger.info(f"Found duplicate URL: {url} matches existing content_id: {existing_id}")
+            return existing_id
+        
+        # Check for content-based duplicates
+        title = metadata.get("title", "")
+        content_fingerprint = generate_content_fingerprint(content, title)
+        
+        duplicate_id = self._find_by_content_fingerprint(content_fingerprint)
+        if duplicate_id:
+            # Double check with similarity to avoid false positives
+            existing_content = self.get_content(duplicate_id)
+            similarity = self._calculate_similarity(content, existing_content)
+            
+            if similarity > 0.85:  # High threshold to avoid false positives
+                logger.info(f"Found similar content with ID {duplicate_id}, similarity: {similarity}")
+                return duplicate_id
+
         # Generate a unique content ID
         content_id = str(uuid.uuid4())
 
-        # Add content ID to metadata
+        # Add content ID and deduplication data to metadata
         metadata["content_id"] = content_id
+        metadata["url_hash"] = url_hash
+        metadata["content_fingerprint"] = content_fingerprint
 
         if "date_added" not in metadata:
             metadata["date_added"] = datetime.datetime.now().isoformat()
@@ -89,6 +182,10 @@ class StorageManager:
 
         # Map content_id to file_path in the content registry
         self._update_content_registry(content_id, file_path)
+        
+        # Update our indices
+        self.url_hash_index[url_hash] = content_id
+        self.fingerprint_index[content_fingerprint] = content_id
 
         return content_id
 

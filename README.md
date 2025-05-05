@@ -174,3 +174,30 @@ This allows you to:
 - Test different content types (HTML, PDF, YouTube)
 - Debug issues with content fetching and processing
 
+## Content Deduplication
+
+The newsletter generator implements a comprehensive deduplication system to prevent the same content from appearing multiple times in your newsletters:
+
+### URL-Based Deduplication
+- URLs are normalized to remove tracking parameters (utm_source, fbclid, etc.)
+- Identical URLs with different tracking parameters are recognized as duplicates
+- Shares of the same URL on different days are automatically detected
+
+### Content-Based Deduplication
+- Each piece of content is fingerprinted based on significant words
+- Similar content from different URLs can be detected as duplicates
+- Prevents different articles discussing the same topic with very similar text
+
+### How It Works
+1. When content is ingested, it's assigned both a URL hash and a content fingerprint
+2. During ingestion, the system checks if similar content already exists
+3. During newsletter assembly, additional fingerprint checks prevent duplicates from different categories
+
+This allows the system to:
+- Prevent duplicate URLs from being processed multiple times
+- Save processing time and API costs
+- Ensure newsletters contain truly unique content
+- Handle the case of the same URL being shared multiple times
+
+No configuration is needed - deduplication is automatically enabled for all new content.
+
