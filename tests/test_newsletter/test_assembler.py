@@ -9,7 +9,7 @@ from newsletter_generator.newsletter.assembler import (
     NewsletterAssembler,
     get_newsletter_assembler,
     collect_weekly_content,
-    organize_by_category,
+    organise_by_category,
     generate_introduction,
     generate_category_section,
     assemble_newsletter,
@@ -31,12 +31,12 @@ def newsletter_assembler():
         mock_storage.get_content.return_value = "Test content"
         mock_storage.get_metadata.return_value = {"title": "Test Title", "url": "https://example.com"}
         
-        mock_processor.categorize_content.return_value = {
+        mock_processor.categorise_content.return_value = {
             "primary_category": "Test Category",
             "secondary_categories": ["Other Category"],
             "tags": ["test", "example"]
         }
-        mock_processor.summarize_content.return_value = "This is a test summary."
+        mock_processor.summarise_content.return_value = "This is a test summary."
         mock_processor.generate_newsletter_section.return_value = "# Test Section\n\nThis is a test section."
         
         mock_lightrag.search.return_value = []
@@ -48,7 +48,7 @@ class TestNewsletterAssembler:
     """Test cases for the NewsletterAssembler class."""
     
     def test_init(self, newsletter_assembler):
-        """Test initializing the newsletter assembler."""
+        """Test initialising the newsletter assembler."""
         assert newsletter_assembler.output_dir == "/test/newsletters"
     
     @patch("newsletter_generator.newsletter.assembler.datetime")
@@ -98,8 +98,8 @@ class TestNewsletterAssembler:
             assert result[1]["id"] == "content2"
             assert "content3" not in [item["id"] for item in result]
     
-    def test_organize_by_category_with_existing_categories(self, newsletter_assembler):
-        """Test organizing content by category when categories already exist."""
+    def test_organise_by_category_with_existing_categories(self, newsletter_assembler):
+        """Test organising content by category when categories already exist."""
         content_items = [
             {
                 "id": "content1",
@@ -118,7 +118,7 @@ class TestNewsletterAssembler:
             },
         ]
         
-        result = newsletter_assembler.organize_by_category(content_items)
+        result = newsletter_assembler.organise_by_category(content_items)
         
         assert len(result) == 2
         assert "Category A" in result
@@ -126,8 +126,8 @@ class TestNewsletterAssembler:
         assert len(result["Category A"]) == 2
         assert len(result["Category B"]) == 1
     
-    def test_organize_by_category_with_missing_categories(self, newsletter_assembler):
-        """Test organizing content by category when categories need to be determined."""
+    def test_organise_by_category_with_missing_categories(self, newsletter_assembler):
+        """Test organising content by category when categories need to be determined."""
         content_items = [
             {
                 "id": "content1",
@@ -144,13 +144,13 @@ class TestNewsletterAssembler:
         with patch("newsletter_generator.newsletter.assembler.processor") as mock_processor, \
              patch("newsletter_generator.newsletter.assembler.storage_manager") as mock_storage:
             
-            mock_processor.categorize_content.return_value = {
+            mock_processor.categorise_content.return_value = {
                 "primary_category": "Category A",
                 "secondary_categories": ["Other Category"],
                 "tags": ["test", "example"]
             }
             
-            result = newsletter_assembler.organize_by_category(content_items)
+            result = newsletter_assembler.organise_by_category(content_items)
             
             assert len(result) == 2
             assert "Category A" in result
@@ -173,15 +173,15 @@ class TestNewsletterAssembler:
         mock_now.strftime.return_value = "May 01, 2025"
         mock_datetime.datetime.now.return_value = mock_now
         
-        categorized_content = {
+        categorised_content = {
             "Category A": [{"id": "content1"}, {"id": "content2"}],
             "Category B": [{"id": "content3"}],
         }
         
         with patch("newsletter_generator.newsletter.assembler.processor") as mock_processor:
-            mock_processor.summarize_content.return_value = "This is a test introduction."
+            mock_processor.summarise_content.return_value = "This is a test introduction."
             
-            result = newsletter_assembler.generate_introduction(categorized_content)
+            result = newsletter_assembler.generate_introduction(categorised_content)
             
             assert "*May 01, 2025*" in result
             assert "This is a test introduction." in result
@@ -217,7 +217,7 @@ class TestNewsletterAssembler:
         with patch("newsletter_generator.newsletter.assembler.processor") as mock_processor, \
              patch("newsletter_generator.newsletter.assembler.storage_manager") as mock_storage:
             
-            mock_processor.summarize_content.return_value = "This is a generated summary."
+            mock_processor.summarise_content.return_value = "This is a generated summary."
             mock_processor.generate_newsletter_section.return_value = "# Test Section\n\nThis is a test section."
             
             result = newsletter_assembler.generate_category_section("Test Category", items)
@@ -228,7 +228,7 @@ class TestNewsletterAssembler:
             assert "[Read more](https://example.com/1)" in result
             assert "[Read more](https://example.com/2)" in result
             
-            mock_processor.summarize_content.assert_called_once_with("Test content 2", max_length=100)
+            mock_processor.summarise_content.assert_called_once_with("Test content 2", max_length=100)
             mock_storage.update_metadata.assert_called_once_with(
                 "content2",
                 {
@@ -249,12 +249,12 @@ class TestNewsletterAssembler:
         mock_datetime.datetime.now.return_value = mock_now
         
         with patch.object(newsletter_assembler, "collect_weekly_content") as mock_collect, \
-             patch.object(newsletter_assembler, "organize_by_category") as mock_organize, \
+             patch.object(newsletter_assembler, "organise_by_category") as mock_organise, \
              patch.object(newsletter_assembler, "generate_introduction") as mock_intro, \
              patch.object(newsletter_assembler, "generate_category_section") as mock_section:
             
             mock_collect.return_value = [{"id": "content1"}, {"id": "content2"}]
-            mock_organize.return_value = {
+            mock_organise.return_value = {
                 "Category A": [{"id": "content1"}],
                 "Category B": [{"id": "content2"}],
             }
@@ -357,16 +357,16 @@ class TestConvenienceFunctions:
             
             mock_assembler.collect_weekly_content.assert_called_once_with(days=14)
     
-    def test_organize_by_category_function(self):
-        """Test the organize_by_category convenience function."""
+    def test_organise_by_category_function(self):
+        """Test the organise_by_category convenience function."""
         with patch("newsletter_generator.newsletter.assembler.get_newsletter_assembler") as mock_get_assembler:
             mock_assembler = MagicMock()
             mock_get_assembler.return_value = mock_assembler
             
             content_items = [{"id": "content1"}]
-            organize_by_category(content_items)
+            organise_by_category(content_items)
             
-            mock_assembler.organize_by_category.assert_called_once_with(content_items)
+            mock_assembler.organise_by_category.assert_called_once_with(content_items)
     
     def test_generate_introduction_function(self):
         """Test the generate_introduction convenience function."""
@@ -374,10 +374,10 @@ class TestConvenienceFunctions:
             mock_assembler = MagicMock()
             mock_get_assembler.return_value = mock_assembler
             
-            categorized_content = {"Category A": [{"id": "content1"}]}
-            generate_introduction(categorized_content)
+            categorised_content = {"Category A": [{"id": "content1"}]}
+            generate_introduction(categorised_content)
             
-            mock_assembler.generate_introduction.assert_called_once_with(categorized_content)
+            mock_assembler.generate_introduction.assert_called_once_with(categorised_content)
     
     def test_generate_category_section_function(self):
         """Test the generate_category_section convenience function."""

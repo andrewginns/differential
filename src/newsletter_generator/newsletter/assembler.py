@@ -1,7 +1,7 @@
 """Newsletter assembler module for the newsletter generator.
 
 This module is responsible for assembling the weekly technical newsletter
-by collecting content, organizing it by categories, and generating the
+by collecting content, organising it by categories, and generating the
 final Markdown document.
 """
 
@@ -21,12 +21,12 @@ logger = get_logger("newsletter.assembler")
 class NewsletterAssembler:
     """Assembles the weekly technical newsletter.
 
-    This class is responsible for collecting content, organizing it by categories,
+    This class is responsible for collecting content, organising it by categories,
     and generating the final newsletter in Markdown format.
     """
 
     def __init__(self, output_dir: Optional[str] = None):
-        """Initialize the newsletter assembler.
+        """Initialise the newsletter assembler.
 
         Args:
             output_dir: The directory to save the generated newsletters.
@@ -39,7 +39,7 @@ class NewsletterAssembler:
         os.makedirs(self.output_dir, exist_ok=True)
 
         logger.info(
-            f"Initialized newsletter assembler with output directory: {self.output_dir}"
+            f"Initialised newsletter assembler with output directory: {self.output_dir}"
         )
 
     def collect_weekly_content(self, days: int = 7) -> List[Dict[str, Any]]:
@@ -85,10 +85,10 @@ class NewsletterAssembler:
             logger.error(f"Error collecting weekly content: {e}")
             raise
 
-    def organize_by_category(
+    def organise_by_category(
         self, content_items: List[Dict[str, Any]]
     ) -> Dict[str, List[Dict[str, Any]]]:
-        """Organize content items by category.
+        """Organise content items by category.
 
         Args:
             content_items: A list of content items with their metadata.
@@ -97,44 +97,44 @@ class NewsletterAssembler:
             A dictionary mapping categories to lists of content items.
         """
         try:
-            categorized_content = {}
+            categorised_content = {}
 
             for item in content_items:
                 if "category" not in item["metadata"]:
-                    categorization = processor.categorize_content(item["text"])
-                    category = categorization["primary_category"]
+                    categorisation = processor.categorise_content(item["text"])
+                    category = categorisation["primary_category"]
 
                     item["metadata"]["category"] = category
-                    item["metadata"]["secondary_categories"] = categorization[
+                    item["metadata"]["secondary_categories"] = categorisation[
                         "secondary_categories"
                     ]
-                    item["metadata"]["tags"] = categorization["tags"]
+                    item["metadata"]["tags"] = categorisation["tags"]
 
                     storage_manager.update_metadata(item["id"], item["metadata"])
                 else:
                     category = item["metadata"]["category"]
 
-                if category not in categorized_content:
-                    categorized_content[category] = []
+                if category not in categorised_content:
+                    categorised_content[category] = []
 
-                categorized_content[category].append(item)
+                categorised_content[category].append(item)
 
-            logger.info(f"Organized content into {len(categorized_content)} categories")
+            logger.info(f"Organised content into {len(categorised_content)} categories")
 
-            return categorized_content
+            return categorised_content
         except Exception as e:
-            logger.error(f"Error organizing content by category: {e}")
+            logger.error(f"Error organising content by category: {e}")
             raise
 
     def generate_introduction(
         self,
-        categorized_content: Dict[str, List[Dict[str, Any]]],
+        categorised_content: Dict[str, List[Dict[str, Any]]],
         category_sections: Optional[Dict[str, str]] = None,
     ) -> str:
         """Generate an introduction for the newsletter.
 
         Args:
-            categorized_content: A dictionary mapping categories to lists of content items.
+            categorised_content: A dictionary mapping categories to lists of content items.
             category_sections: A dictionary mapping categories to their generated section content.
                 If provided, will be used to generate a more accurate introduction based on actual content.
 
@@ -142,15 +142,15 @@ class NewsletterAssembler:
             The generated introduction in Markdown format.
         """
         try:
-            categories = list(categorized_content.keys())
-            total_items = sum(len(items) for items in categorized_content.values())
+            categories = list(categorised_content.keys())
+            total_items = sum(len(items) for items in categorised_content.values())
 
             # Prepare content summary if we have category sections
             content_summary = None
             if category_sections:
                 # Create a summary of the actual content
                 all_sections_text = "\n".join(category_sections.values())
-                content_summary = processor.summarize_content(
+                content_summary = processor.summarise_content(
                     all_sections_text, max_length=500
                 )
 
@@ -171,7 +171,7 @@ class NewsletterAssembler:
 """
 
             for category in sorted(categories):
-                item_count = len(categorized_content[category])
+                item_count = len(categorised_content[category])
                 formatted_intro += f"- [{category}](#{''.join(category.lower().split())}) ({item_count} item{'s' if item_count > 1 else ''})\n"
 
             logger.info("Generated newsletter introduction")
@@ -213,7 +213,7 @@ class NewsletterAssembler:
                 content_id = item["id"]
 
                 if "summary" not in item["metadata"]:
-                    summary = processor.summarize_content(item["text"], max_length=100)
+                    summary = processor.summarise_content(item["text"], max_length=100)
                     item["metadata"]["summary"] = summary
                     storage_manager.update_metadata(item["id"], item["metadata"])
                 else:
@@ -267,7 +267,7 @@ class NewsletterAssembler:
             The path to the generated newsletter file.
         """
         try:
-            # Initialize the processor with the specified provider
+            # Initialise the processor with the specified provider
             if model_provider is not None:
                 processor.get_ai_processor(provider=model_provider)
 
@@ -280,12 +280,12 @@ class NewsletterAssembler:
             # Track content IDs that have been processed to avoid duplicate content
             processed_content_ids = set()
             
-            # Create a filtered categorized content dictionary
-            categorized_content = self.organize_by_category(content_items)
-            filtered_categorized_content = {}
+            # Create a filtered categorised content dictionary
+            categorised_content = self.organise_by_category(content_items)
+            filtered_categorised_content = {}
             
             # First pass: filter out duplicate content items
-            for category, items in categorized_content.items():
+            for category, items in categorised_content.items():
                 filtered_items = []
                 for item in items:
                     if item["id"] not in processed_content_ids:
@@ -297,20 +297,20 @@ class NewsletterAssembler:
                         )
                 
                 if filtered_items:
-                    filtered_categorized_content[category] = filtered_items
+                    filtered_categorised_content[category] = filtered_items
             
             # Use the filtered content for the rest of the process
-            categorized_content = filtered_categorized_content
+            categorised_content = filtered_categorised_content
 
             # Generate category sections first
             category_sections = {}
-            for category, items in sorted(categorized_content.items()):
+            for category, items in sorted(categorised_content.items()):
                 section = self.generate_category_section(category, items)
                 category_sections[category] = section
 
             # Generate introduction after all content has been processed
             newsletter = self.generate_introduction(
-                categorized_content, category_sections
+                categorised_content, category_sections
             )
 
             # Add all category sections to the newsletter
@@ -414,10 +414,10 @@ def collect_weekly_content(days: int = 7) -> List[Dict[str, Any]]:
     return get_newsletter_assembler().collect_weekly_content(days=days)
 
 
-def organize_by_category(
+def organise_by_category(
     content_items: List[Dict[str, Any]],
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Organize content items by category.
+    """Organise content items by category.
 
     This is a convenience function that uses the singleton newsletter_assembler instance.
 
@@ -427,21 +427,21 @@ def organize_by_category(
     Returns:
         A dictionary mapping categories to lists of content items.
     """
-    return get_newsletter_assembler().organize_by_category(content_items)
+    return get_newsletter_assembler().organise_by_category(content_items)
 
 
-def generate_introduction(categorized_content: Dict[str, List[Dict[str, Any]]]) -> str:
+def generate_introduction(categorised_content: Dict[str, List[Dict[str, Any]]]) -> str:
     """Generate an introduction for the newsletter.
 
     This is a convenience function that uses the singleton newsletter_assembler instance.
 
     Args:
-        categorized_content: A dictionary mapping categories to lists of content items.
+        categorised_content: A dictionary mapping categories to lists of content items.
 
     Returns:
         The generated introduction in Markdown format.
     """
-    return get_newsletter_assembler().generate_introduction(categorized_content)
+    return get_newsletter_assembler().generate_introduction(categorised_content)
 
 
 def generate_category_section(category: str, items: List[Dict[str, Any]]) -> str:

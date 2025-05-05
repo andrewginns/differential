@@ -1,7 +1,7 @@
 """AI processor module for the newsletter generator.
 
-This module integrates PydanticAI for content processing, categorization,
-and summarization of technical content with support for multiple LLM providers.
+This module integrates PydanticAI for content processing, categorisation,
+and summarisation of technical content with support for multiple LLM providers.
 """
 
 import os
@@ -41,7 +41,7 @@ class ModelProvider(str, Enum):
 
 
 class CategoryOutput(BaseModel):
-    """Pydantic model for categorization output."""
+    """Pydantic model for categorisation output."""
 
     primary_category: str = Field(description="The primary category of the content")
     secondary_categories: List[str] = Field(
@@ -75,7 +75,7 @@ class AIProcessor:
     """Processes content using PydanticAI with support for multiple LLM models.
 
     This class provides an interface to LLM models for content processing,
-    categorization, and summarization of technical content.
+    categorisation, and summarisation of technical content.
     """
 
     def __init__(
@@ -83,7 +83,7 @@ class AIProcessor:
         provider: ModelProvider = ModelProvider.GEMINI,
         output_dir: str = "newsletter_output",
     ):
-        """Initialize the AI processor.
+        """Initialise the AI processor.
 
         Sets up the PydanticAI agents with the appropriate models.
 
@@ -104,12 +104,13 @@ class AIProcessor:
         self.current_model = self._get_model_for_provider(provider)
 
         # Create agents for different tasks
-        self.categorization_agent = Agent(
+        self.categorisation_agent = Agent(
             self.current_model,
+            name="Categorisation Agent",
             output_type=CategoryOutput,
             system_prompt="""
-            You are a technical content categorization assistant. Your task is to analyze
-            technical content and categorize it into one of the following primary categories:
+            You are a technical content categorisation assistant. Your task is to analyse
+            technical content and categorise it into one of the following primary categories:
             
             - Frontend Development
             - Backend Development
@@ -125,13 +126,14 @@ class AIProcessor:
             - Other
             
             Also provide up to 3 secondary categories if applicable, and up to 5 relevant tags.
-            Provide a confidence score between 0.0 and 1.0 for your categorization.
+            Provide a confidence score between 0.0 and 1.0 for your categorisation.
             """,
         )
-        self.categorization_agent.instrument_all()
+        self.categorisation_agent.instrument_all()
 
         self.insights_agent = Agent(
             self.current_model,
+            name="Insights Agent",
             output_type=InsightsOutput,
             system_prompt="""
             You are a technical insight extraction assistant. Your task is to identify
@@ -139,7 +141,7 @@ class AIProcessor:
             
             Focus on:
             1. Novel technical approaches or methodologies
-            2. Significant performance improvements or optimizations
+            2. Significant performance improvements or optimisations
             3. Innovative solutions to technical challenges
             4. Important technical trends or shifts
             5. Key technical limitations or constraints identified
@@ -152,6 +154,7 @@ class AIProcessor:
 
         self.relevance_agent = Agent(
             self.current_model,
+            name="Relevance Agent",
             output_type=RelevanceOutput,
             system_prompt="""
             You are a technical content relevance evaluator. Your task is to assess
@@ -170,7 +173,7 @@ class AIProcessor:
             """,
         )
 
-        logger.info(f"Initialized AI processor with provider: {provider}")
+        logger.info(f"Initialised AI processor with provider: {provider}")
 
     def _get_model_for_provider(self, provider: ModelProvider):
         """Get the appropriate model for the given provider.
@@ -198,7 +201,7 @@ class AIProcessor:
         self.current_model = self._get_model_for_provider(provider)
 
         # Update all agents to use the new model
-        self.categorization_agent.model = self.current_model
+        self.categorisation_agent.model = self.current_model
         self.insights_agent.model = self.current_model
         self.relevance_agent.model = self.current_model
 
@@ -282,16 +285,16 @@ class AIProcessor:
                 f"❌ CACHE ERROR: Failed to save {step_name} data to {file_path}: {e}"
             )
 
-    def categorize_content(
+    def categorise_content(
         self,
         content: str,
         newsletter_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> Dict[str, Any]:
-        """Categorize technical content into predefined categories.
+        """Categorise technical content into predefined categories.
 
         Args:
-            content: The content to categorize.
+            content: The content to categorise.
             newsletter_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
@@ -305,7 +308,7 @@ class AIProcessor:
             }
 
         Raises:
-            Exception: If there's an error categorizing the content.
+            Exception: If there's an error categorising the content.
         """
         try:
             # Generate newsletter ID if not provided
@@ -317,56 +320,56 @@ class AIProcessor:
 
             # Set up output directory
             newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "categorization.json"
+            cache_file = newsletter_dir / "categorisation.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
                 cached_data = self._check_cache(
-                    cache_file, "categorization", newsletter_id
+                    cache_file, "categorisation", newsletter_id
                 )
                 if cached_data:
                     return cached_data
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing categorization for newsletter '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing categorisation for newsletter '{newsletter_id}'"
                 )
 
             logger.info(
-                f"🔍 PROCESSING: Categorizing content for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Categorising content for newsletter '{newsletter_id}' using {self.provider} model"
             )
-            result = self.categorization_agent.run_sync(
-                f"Please categorize the following technical content: {content}"
+            result = self.categorisation_agent.run_sync(
+                f"Please categorise the following technical content: {content}"
             )
 
-            categorization = result.output.model_dump()
+            categorisation = result.output.model_dump()
 
             logger.info(
-                f"✅ COMPLETED: Content categorized as '{categorization['primary_category']}' with confidence {categorization['confidence']}"
+                f"✅ COMPLETED: Content categorised as '{categorisation['primary_category']}' with confidence {categorisation['confidence']}"
             )
 
             # Save result to cache
             self._save_to_cache(
-                cache_file, categorization, "categorization", newsletter_id
+                cache_file, categorisation, "categorisation", newsletter_id
             )
 
-            return categorization
+            return categorisation
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to categorize content for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to categorise content for newsletter '{newsletter_id}': {e}"
             )
             raise
 
-    def summarize_content(
+    def summarise_content(
         self,
         content: str,
         max_length: int = 200,
         newsletter_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
-        """Summarize technical content.
+        """Summarise technical content.
 
         Args:
-            content: The content to summarize.
+            content: The content to summarise.
             max_length: The maximum length of the summary in words.
             newsletter_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
@@ -375,7 +378,7 @@ class AIProcessor:
             A summary of the content.
 
         Raises:
-            Exception: If there's an error summarizing the content.
+            Exception: If there's an error summarising the content.
         """
         try:
             # Generate newsletter ID if not provided
@@ -399,11 +402,12 @@ class AIProcessor:
                     f"🔄 CACHE BYPASS: Force refreshing summary for newsletter '{newsletter_id}'"
                 )
 
-            # Create a summarization agent on demand with a custom system prompt
-            summarization_agent = Agent(
+            # Create a summarisation agent on demand with a custom system prompt
+            summarisation_agent = Agent(
                 self.current_model,
+                name="Summarisation Agent",
                 system_prompt=f"""
-                You are a technical content summarization assistant. Your task is to create
+                You are a technical content summarisation assistant. Your task is to create
                 concise, informative summaries of technical content that capture the key
                 points while maintaining technical accuracy.
                 
@@ -424,10 +428,10 @@ class AIProcessor:
             )
 
             logger.info(
-                f"🔍 PROCESSING: Summarizing content for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Summarising content for newsletter '{newsletter_id}' using {self.provider} model"
             )
-            result = summarization_agent.run_sync(
-                f"Please summarize the following technical content: {content}"
+            result = summarisation_agent.run_sync(
+                f"Please summarise the following technical content: {content}"
             )
 
             summary = result.output
@@ -447,7 +451,7 @@ class AIProcessor:
             return summary
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to summarize content for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to summarise content for newsletter '{newsletter_id}': {e}"
             )
             raise
 
@@ -460,7 +464,7 @@ class AIProcessor:
         """Generate key insights from technical content.
 
         Args:
-            content: The content to analyze.
+            content: The content to analyse.
             newsletter_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
@@ -635,6 +639,7 @@ class AIProcessor:
             # Create a newsletter section agent on demand with a custom system prompt
             newsletter_section_agent = Agent(
                 self.current_model,
+                name="Section Creation Agent",
                 system_prompt=f"""
                 You are a technical newsletter section writer. Your task is to create
                 engaging, informative newsletter sections from technical content.
@@ -747,6 +752,7 @@ class AIProcessor:
             # Create a newsletter introduction agent on demand with a custom system prompt
             newsletter_introduction_agent = Agent(
                 self.current_model,
+                name="Introduction Agent",
                 system_prompt=f"""
                 You are a technical newsletter introduction writer. Your task is to create
                 engaging, informative introductions for technical newsletters.
@@ -855,38 +861,38 @@ def get_ai_processor(
     return ai_processor
 
 
-def categorize_content(
+def categorise_content(
     content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
 ) -> Dict[str, Any]:
-    """Categorize technical content into predefined categories.
+    """Categorise technical content into predefined categories.
 
     This is a convenience function that uses the singleton ai_processor instance.
 
     Args:
-        content: The content to categorize.
+        content: The content to categorise.
         newsletter_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
         A dictionary containing the category information.
     """
-    return get_ai_processor().categorize_content(
+    return get_ai_processor().categorise_content(
         content, newsletter_id=newsletter_id, force_refresh=force_refresh
     )
 
 
-def summarize_content(
+def summarise_content(
     content: str,
     max_length: int = 200,
     newsletter_id: Optional[str] = None,
     force_refresh: bool = False,
 ) -> str:
-    """Summarize technical content.
+    """Summarise technical content.
 
     This is a convenience function that uses the singleton ai_processor instance.
 
     Args:
-        content: The content to summarize.
+        content: The content to summarise.
         max_length: The maximum length of the summary in words.
         newsletter_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
@@ -894,7 +900,7 @@ def summarize_content(
     Returns:
         A summary of the content.
     """
-    return get_ai_processor().summarize_content(
+    return get_ai_processor().summarise_content(
         content, max_length, newsletter_id=newsletter_id, force_refresh=force_refresh
     )
 
@@ -907,7 +913,7 @@ def generate_insights(
     This is a convenience function that uses the singleton ai_processor instance.
 
     Args:
-        content: The content to analyze.
+        content: The content to analyse.
         newsletter_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 

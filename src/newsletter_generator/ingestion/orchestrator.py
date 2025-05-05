@@ -1,7 +1,7 @@
 """Ingestion orchestrator for the newsletter generator.
 
 This module orchestrates the ingestion process for URLs, determining content type
-and routing to appropriate fetchers, parsers, and standardizers.
+and routing to appropriate fetchers, parsers, and standardisers.
 """
 
 import re
@@ -27,12 +27,12 @@ class IngestionOrchestrator:
     """Orchestrates the ingestion process for URLs.
 
     This class determines the content type of a URL, routes it to the appropriate
-    content fetcher, parser, and standardizer, and manages the overall ingestion
+    content fetcher, parser, and standardiser, and manages the overall ingestion
     process including retries.
     """
 
     def __init__(self):
-        """Initialize the ingestion orchestrator."""
+        """Initialise the ingestion orchestrator."""
         from newsletter_generator.ingestion.content_fetcher import (
             HTMLContentFetcher,
             PDFContentFetcher,
@@ -43,8 +43,8 @@ class IngestionOrchestrator:
             PDFContentParser,
             YouTubeContentParser,
         )
-        from newsletter_generator.ingestion.content_standardizer import (
-            ContentStandardizer,
+        from newsletter_generator.ingestion.content_standardiser import (
+            ContentStandardiser,
         )
 
         self.html_fetcher = HTMLContentFetcher()
@@ -55,7 +55,7 @@ class IngestionOrchestrator:
         self.pdf_parser = PDFContentParser()
         self.youtube_parser = YouTubeContentParser()
 
-        self.standardizer = ContentStandardizer()
+        self.standardiser = ContentStandardiser()
 
     async def determine_content_type(self, url: str) -> str:
         """Determine the content type of a URL asynchronously.
@@ -114,7 +114,7 @@ class IngestionOrchestrator:
             url: The URL to ingest.
 
         Returns:
-            A tuple containing the standardized Markdown content and metadata.
+            A tuple containing the standardised Markdown content and metadata.
 
         Raises:
             ValueError: If the URL is invalid or the content type is unsupported.
@@ -151,7 +151,7 @@ class IngestionOrchestrator:
         elif content_type == "youtube":
             parsed_content = self.youtube_parser.parse(raw_content)
 
-        standardized_content = self.standardizer.standardize(parsed_content)
+        standardised_content = self.standardiser.standardise(parsed_content)
 
         metadata = {
             "url": url,
@@ -159,7 +159,7 @@ class IngestionOrchestrator:
             "status": "pending_ai",
         }
 
-        return standardized_content, metadata
+        return standardised_content, metadata
 
 
 # Create a singleton instance
@@ -175,6 +175,6 @@ async def ingest_url(url: str) -> Tuple[str, Dict[str, Any]]:
         url: The URL to ingest.
 
     Returns:
-        A tuple containing the standardized Markdown content and metadata.
+        A tuple containing the standardised Markdown content and metadata.
     """
     return await orchestrator.ingest_url(url)

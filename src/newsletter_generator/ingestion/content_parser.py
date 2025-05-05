@@ -26,7 +26,7 @@ class HTMLContentParser:
     """
     
     def __init__(self):
-        """Initialize the HTML content parser."""
+        """Initialise the HTML content parser."""
         pass
     
     def parse(self, content: Dict[str, Any], url: str) -> str:
@@ -81,7 +81,7 @@ class PDFContentParser:
     """
     
     def __init__(self):
-        """Initialize the PDF content parser."""
+        """Initialise the PDF content parser."""
         pass
     
     def parse(self, content: bytes) -> str:

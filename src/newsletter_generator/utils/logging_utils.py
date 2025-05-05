@@ -1,6 +1,6 @@
 """Logging utilities for the newsletter generator.
 
-This module provides a centralized logging configuration and utility functions
+This module provides a centralised logging configuration and utility functions
 for consistent logging across the application.
 """
 

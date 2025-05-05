@@ -8,8 +8,6 @@ from unittest.mock import patch, mock_open, MagicMock
 
 from newsletter_generator.storage.storage_manager import (
     StorageManager,
-    write_content,
-    read_content,
     update_metadata,
     find_files_by_status,
     cleanup_old_files,

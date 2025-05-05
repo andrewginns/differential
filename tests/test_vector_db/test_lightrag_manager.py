@@ -20,13 +20,13 @@ def lightrag_manager():
     
     with patch("newsletter_generator.vector_db.lightrag_manager.OpenAI") as mock_openai, \
          patch("newsletter_generator.vector_db.lightrag_manager.lightrag") as mock_lightrag, \
-         patch.object(LightRAGManager, "_initialize_db") as mock_initialize_db:
+         patch.object(LightRAGManager, "_initialise_db") as mock_initialise_db:
         
         mock_client = MagicMock()
         mock_openai.return_value = mock_client
         
         mock_db = MagicMock()
-        mock_initialize_db.return_value = mock_db
+        mock_initialise_db.return_value = mock_db
         
         manager = LightRAGManager(data_dir=test_data_dir)
         
@@ -57,13 +57,13 @@ class TestLightRAGManager:
             os.rmdir(test_dir)
     
     @pytest.mark.skip(reason="Requires actual LightRAG API structure")
-    def test_initialize_db(self, lightrag_manager):
-        """Test initializing the LightRAG database."""
+    def test_initialise_db(self, lightrag_manager):
+        """Test initialising the LightRAG database."""
         pass
     
     @pytest.mark.skip(reason="Requires actual LightRAG API structure")
-    def test_initialize_db_error(self, lightrag_manager):
-        """Test error handling when initializing the LightRAG database."""
+    def test_initialise_db_error(self, lightrag_manager):
+        """Test error handling when initialising the LightRAG database."""
         pass
     
     def test_generate_embedding(self, lightrag_manager):

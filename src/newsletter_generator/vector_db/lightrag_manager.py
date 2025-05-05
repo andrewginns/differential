@@ -25,7 +25,7 @@ class LightRAGManager:
     """
     
     def __init__(self, data_dir: Optional[str] = None):
-        """Initialize the LightRAG manager.
+        """Initialise the LightRAG manager.
         
         Args:
             data_dir: The directory to store vector database files. If None,
@@ -38,15 +38,15 @@ class LightRAGManager:
         
         self.openai_client = OpenAI(api_key=get_openai_api_key())
         
-        self.db = self._initialize_db()
+        self.db = self._initialise_db()
         
-        logger.info(f"Initialized LightRAG manager with data directory: {self.data_dir}")
+        logger.info(f"Initialised LightRAG manager with data directory: {self.data_dir}")
     
-    def _initialize_db(self) -> Any:
-        """Initialize the LightRAG database.
+    def _initialise_db(self) -> Any:
+        """Initialise the LightRAG database.
         
         Returns:
-            The initialized LightRAG database instance.
+            The initialised LightRAG database instance.
         """
         try:
             db = lightrag.VectorDB(
@@ -56,7 +56,7 @@ class LightRAGManager:
             )
             return db
         except Exception as e:
-            logger.error(f"Error initializing LightRAG database: {e}")
+            logger.error(f"Error initialising LightRAG database: {e}")
             raise
     
     def _generate_embedding(self, text: str) -> List[float]:

@@ -25,7 +25,7 @@ class StorageManager:
     """
 
     def __init__(self, data_dir: Optional[str] = None):
-        """Initialize the storage manager.
+        """Initialise the storage manager.
 
         Args:
             data_dir: The directory to store data in. If None, uses the default

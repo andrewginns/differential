@@ -26,7 +26,7 @@ class HTMLContentFetcher:
     """
 
     def __init__(self):
-        """Initialize the HTML content fetcher."""
+        """Initialise the HTML content fetcher."""
         self.browser_config = BrowserConfig(
             headless=True,
             ignore_https_errors=True,
@@ -120,7 +120,7 @@ class PDFContentFetcher:
     """
 
     def __init__(self):
-        """Initialize the PDF content fetcher."""
+        """Initialise the PDF content fetcher."""
         pass
 
     async def fetch(self, url: str) -> bytes:
@@ -166,7 +166,7 @@ class YouTubeContentFetcher:
     """
 
     def __init__(self):
-        """Initialize the YouTube content fetcher."""
+        """Initialise the YouTube content fetcher."""
         pass
 
     def _extract_video_id(self, url: str) -> str:

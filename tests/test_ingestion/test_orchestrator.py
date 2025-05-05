@@ -119,20 +119,20 @@ class TestIngestionOrchestrator:
             return_value={"markdown": "# Test", "html": "<h1>Test</h1>"}
         )
         orchestrator.html_parser.parse = MagicMock(return_value="# Parsed Test")
-        orchestrator.standardizer.standardize = MagicMock(
-            return_value="# Standardized Test"
+        orchestrator.standardiser.standardise = MagicMock(
+            return_value="# Standardised Test"
         )
 
         content, metadata = await orchestrator.ingest_url("https://example.com")
 
-        assert content == "# Standardized Test"
+        assert content == "# Standardised Test"
         assert metadata["url"] == "https://example.com"
         assert metadata["source_type"] == "html"
         assert metadata["status"] == "pending_ai"
 
         orchestrator.html_fetcher.fetch.assert_called_once_with("https://example.com")
         orchestrator.html_parser.parse.assert_called_once()
-        orchestrator.standardizer.standardize.assert_called_once_with("# Parsed Test")
+        orchestrator.standardiser.standardise.assert_called_once_with("# Parsed Test")
 
     @pytest.mark.asyncio
     @patch(
@@ -145,13 +145,13 @@ class TestIngestionOrchestrator:
         orchestrator = IngestionOrchestrator()
         orchestrator.pdf_fetcher.fetch = AsyncMock(return_value=b"PDF content")
         orchestrator.pdf_parser.parse = MagicMock(return_value="# Parsed PDF")
-        orchestrator.standardizer.standardize = MagicMock(
-            return_value="# Standardized PDF"
+        orchestrator.standardiser.standardise = MagicMock(
+            return_value="# Standardised PDF"
         )
 
         content, metadata = await orchestrator.ingest_url("https://example.com/doc.pdf")
 
-        assert content == "# Standardized PDF"
+        assert content == "# Standardised PDF"
         assert metadata["url"] == "https://example.com/doc.pdf"
         assert metadata["source_type"] == "pdf"
         assert metadata["status"] == "pending_ai"
@@ -160,7 +160,7 @@ class TestIngestionOrchestrator:
             "https://example.com/doc.pdf"
         )
         orchestrator.pdf_parser.parse.assert_called_once_with(b"PDF content")
-        orchestrator.standardizer.standardize.assert_called_once_with("# Parsed PDF")
+        orchestrator.standardiser.standardise.assert_called_once_with("# Parsed PDF")
 
     @pytest.mark.asyncio
     @patch(
@@ -175,15 +175,15 @@ class TestIngestionOrchestrator:
             return_value=[{"text": "Transcript", "start": 0}]
         )
         orchestrator.youtube_parser.parse = MagicMock(return_value="# Parsed YouTube")
-        orchestrator.standardizer.standardize = MagicMock(
-            return_value="# Standardized YouTube"
+        orchestrator.standardiser.standardise = MagicMock(
+            return_value="# Standardised YouTube"
         )
 
         content, metadata = await orchestrator.ingest_url(
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         )
 
-        assert content == "# Standardized YouTube"
+        assert content == "# Standardised YouTube"
         assert metadata["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         assert metadata["source_type"] == "youtube"
         assert metadata["status"] == "pending_ai"
@@ -194,7 +194,7 @@ class TestIngestionOrchestrator:
         orchestrator.youtube_parser.parse.assert_called_once_with(
             [{"text": "Transcript", "start": 0}]
         )
-        orchestrator.standardizer.standardize.assert_called_once_with(
+        orchestrator.standardiser.standardise.assert_called_once_with(
             "# Parsed YouTube"
         )
 

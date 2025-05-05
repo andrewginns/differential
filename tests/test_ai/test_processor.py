@@ -6,8 +6,8 @@ from unittest.mock import patch, MagicMock
 from newsletter_generator.ai.processor import (
     AIProcessor,
     get_ai_processor,
-    categorize_content,
-    summarize_content,
+    categorise_content,
+    summarise_content,
     generate_insights,
     evaluate_relevance,
     generate_newsletter_section,
@@ -30,15 +30,15 @@ class TestAIProcessor:
     """Test cases for the AIProcessor class."""
     
     def test_init(self):
-        """Test initializing the AI processor."""
+        """Test initialising the AI processor."""
         with patch("newsletter_generator.ai.processor.OpenAI") as mock_openai:
             processor = AIProcessor()
             
             mock_openai.assert_called_once()
             assert processor.llm_model == "o4-mini"
     
-    def test_categorize_content(self, ai_processor):
-        """Test categorizing content."""
+    def test_categorise_content(self, ai_processor):
+        """Test categorising content."""
         mock_response = MagicMock()
         mock_choice = MagicMock()
         mock_message = MagicMock()
@@ -57,7 +57,7 @@ class TestAIProcessor:
         
         ai_processor.openai_client.chat.completions.create.return_value = mock_response
         
-        result = ai_processor.categorize_content("Test content about machine learning")
+        result = ai_processor.categorise_content("Test content about machine learning")
         
         assert result["primary_category"] == "Machine Learning"
         assert "Artificial Intelligence" in result["secondary_categories"]
@@ -66,15 +66,15 @@ class TestAIProcessor:
         
         ai_processor.openai_client.chat.completions.create.assert_called_once()
     
-    def test_categorize_content_error(self, ai_processor):
-        """Test error handling when categorizing content."""
+    def test_categorise_content_error(self, ai_processor):
+        """Test error handling when categorising content."""
         ai_processor.openai_client.chat.completions.create.side_effect = Exception("Test error")
         
         with pytest.raises(Exception, match="Test error"):
-            ai_processor.categorize_content("Test content")
+            ai_processor.categorise_content("Test content")
     
-    def test_summarize_content(self, ai_processor):
-        """Test summarizing content."""
+    def test_summarise_content(self, ai_processor):
+        """Test summarising content."""
         mock_response = MagicMock()
         mock_choice = MagicMock()
         mock_message = MagicMock()
@@ -86,18 +86,18 @@ class TestAIProcessor:
         
         ai_processor.openai_client.chat.completions.create.return_value = mock_response
         
-        result = ai_processor.summarize_content("Test content to summarize", max_length=100)
+        result = ai_processor.summarise_content("Test content to summarise", max_length=100)
         
         assert result == "This is a test summary of the content."
         
         ai_processor.openai_client.chat.completions.create.assert_called_once()
     
-    def test_summarize_content_error(self, ai_processor):
-        """Test error handling when summarizing content."""
+    def test_summarise_content_error(self, ai_processor):
+        """Test error handling when summarising content."""
         ai_processor.openai_client.chat.completions.create.side_effect = Exception("Test error")
         
         with pytest.raises(Exception, match="Test error"):
-            ai_processor.summarize_content("Test content")
+            ai_processor.summarise_content("Test content")
     
     def test_generate_insights(self, ai_processor):
         """Test generating insights from content."""
@@ -269,27 +269,27 @@ class TestConvenienceFunctions:
             assert processor1 == processor2
             mock_processor_class.assert_called_once()
     
-    def test_categorize_content_function(self):
-        """Test the categorize_content convenience function."""
+    def test_categorise_content_function(self):
+        """Test the categorise_content convenience function."""
         mock_processor = MagicMock()
-        mock_processor.categorize_content.return_value = {"primary_category": "Test"}
+        mock_processor.categorise_content.return_value = {"primary_category": "Test"}
         
         with patch("newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor):
-            result = categorize_content("Test content")
+            result = categorise_content("Test content")
             
             assert result == {"primary_category": "Test"}
-            mock_processor.categorize_content.assert_called_once_with("Test content")
+            mock_processor.categorise_content.assert_called_once_with("Test content")
     
-    def test_summarize_content_function(self):
-        """Test the summarize_content convenience function."""
+    def test_summarise_content_function(self):
+        """Test the summarise_content convenience function."""
         mock_processor = MagicMock()
-        mock_processor.summarize_content.return_value = "Test summary"
+        mock_processor.summarise_content.return_value = "Test summary"
         
         with patch("newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor):
-            result = summarize_content("Test content", max_length=150)
+            result = summarise_content("Test content", max_length=150)
             
             assert result == "Test summary"
-            mock_processor.summarize_content.assert_called_once_with("Test content", 150)
+            mock_processor.summarise_content.assert_called_once_with("Test content", 150)
     
     def test_generate_insights_function(self):
         """Test the generate_insights convenience function."""
@@ -340,33 +340,33 @@ class TestAIProcessorIntegration:
     They are skipped by default.
     """
     
-    def test_real_categorization(self):
-        """Test categorizing content with a real API call."""
+    def test_real_categorisation(self):
+        """Test categorising content with a real API call."""
         processor = AIProcessor()
         
         content = """
         
-        Recent research has shown that transformer models can be optimized for better
+        Recent research has shown that transformer models can be optimised for better
         performance by using sparse attention mechanisms. This reduces the computational
         complexity from O(n²) to O(n log n) while maintaining similar accuracy levels.
         
         The implementation uses PyTorch and demonstrates a 40% speedup on language tasks.
         """
         
-        result = processor.categorize_content(content)
+        result = processor.categorise_content(content)
         
         assert "primary_category" in result
         assert "secondary_categories" in result
         assert "tags" in result
         assert "confidence" in result
     
-    def test_real_summarization(self):
-        """Test summarizing content with a real API call."""
+    def test_real_summarisation(self):
+        """Test summarising content with a real API call."""
         processor = AIProcessor()
         
         content = """
         
-        Transformer models have revolutionized machine learning across various domains,
+        Transformer models have revolutionised machine learning across various domains,
         including natural language processing, computer vision, and audio processing.
         However, the standard transformer architecture has quadratic computational and
         memory complexity with respect to sequence length, which limits its application
@@ -383,7 +383,7 @@ class TestAIProcessorIntegration:
         specific application requirements and hardware constraints.
         """
         
-        result = processor.summarize_content(content, max_length=100)
+        result = processor.summarise_content(content, max_length=100)
         
         assert len(result) > 0
         assert len(result.split()) <= 120  # Allow some flexibility
@@ -400,8 +400,8 @@ class TestAIProcessorIntegration:
         
         Recent developments in the WebAssembly ecosystem include:
         
-        1. WASI (WebAssembly System Interface) standardization
-        2. Integration with containerization technologies
+        1. WASI (WebAssembly System Interface) standardisation
+        2. Integration with containerisation technologies
         3. Support for garbage-collected languages like Java and C#
         4. Component model for better code sharing and reuse
         
