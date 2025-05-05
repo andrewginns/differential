@@ -2,6 +2,8 @@
 
 End-to-end Newsletter Generation. Creates newsletters based on the last x days of information extracted from content links.
 
+![Differential Hero](docs/images/differential_hero.png)
+
 ## Features
 - Ingests content from URLs shared in WhatsApp
 - Processes web pages, PDFs, and YouTube videos
