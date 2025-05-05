@@ -33,9 +33,9 @@ This module handles the AI-powered processing of technical content for the newsl
 
 Each step of the newsletter generation process is automatically saved to disk in a dedicated subfolder:
 
-- All outputs are stored in a folder structure: `newsletter_output/<newsletter_id>/`
+- All outputs are stored in a folder structure: `newsletter_cache/<cache_id>/`
 - Each processing step saves its result to a separate JSON file (e.g., `categorization.json`, `insights.json`)
-- If a process fails midway, it can be resumed by using the same `newsletter_id` in subsequent calls
+- If a process fails midway, it can be resumed by using the same `cache_id` in subsequent calls
 - The system automatically uses cached results unless `force_refresh=True` is specified
 
 This provides fault tolerance against:
@@ -43,12 +43,12 @@ This provides fault tolerance against:
 - Process interruptions
 - Application crashes
 
-### Newsletter IDs
+### Cache IDs
 
-Each piece of content is assigned a unique `newsletter_id`:
+Each piece of content is assigned a unique `cache_id`:
 - Automatically generated as an MD5 hash of the content (by default)
 - Can be manually specified for better tracking and organization
-- All outputs for a specific newsletter are stored in its dedicated folder
+- All outputs for a specific content are stored in its dedicated folder
 
 ### Logging and Monitoring
 
@@ -82,20 +82,20 @@ from newsletter_generator.ai.processor import (
 )
 
 # Process an article with automatic checkpointing
-newsletter_id = "tech_news_2023_06_15"  # Optional custom ID
-category_info = categorize_content(article_text, newsletter_id=newsletter_id)
-relevance = evaluate_relevance(article_text, newsletter_id=newsletter_id)
-insights = generate_insights(article_text, newsletter_id=newsletter_id)
-summary = summarize_content(article_text, max_length=200, newsletter_id=newsletter_id)
+cache_id = "tech_news_2023_06_15"  # Optional custom ID
+category_info = categorize_content(article_text, cache_id=cache_id)
+relevance = evaluate_relevance(article_text, cache_id=cache_id)
+insights = generate_insights(article_text, cache_id=cache_id)
+summary = summarize_content(article_text, max_length=200, cache_id=cache_id)
 section = generate_newsletter_section(
     article_title, 
     article_text, 
     category_info["primary_category"],
-    newsletter_id=newsletter_id
+    cache_id=cache_id
 )
 
 # Force regeneration of a specific step
-insights = generate_insights(article_text, newsletter_id=newsletter_id, force_refresh=True)
+insights = generate_insights(article_text, cache_id=cache_id, force_refresh=True)
 ```
 
 ## Configuration

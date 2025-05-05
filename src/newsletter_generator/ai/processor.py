@@ -71,6 +71,18 @@ class RelevanceOutput(BaseModel):
     )
 
 
+class IntroductionOutput(BaseModel):
+    """Pydantic model for newsletter introduction output."""
+    
+    introduction: str = Field(description="The formatted newsletter introduction text")
+
+
+class SectionOutput(BaseModel):
+    """Pydantic model for newsletter section output."""
+    
+    section: str = Field(description="The formatted newsletter section text in Markdown")
+
+
 class AIProcessor:
     """Processes content using PydanticAI with support for multiple LLM models.
 
@@ -81,7 +93,7 @@ class AIProcessor:
     def __init__(
         self,
         provider: ModelProvider = ModelProvider.GEMINI,
-        output_dir: str = "newsletter_cache",
+        cache_base_dir: str = "newsletter_cache",
     ):
         """Initialise the AI processor.
 
@@ -89,10 +101,10 @@ class AIProcessor:
 
         Args:
             provider: The model provider to use (OpenAI or Gemini)
-            output_dir: Base directory to store newsletter outputs
+            cache_base_dir: Base directory for caching model outputs
         """
         self.provider = provider
-        self.output_dir = output_dir
+        self.cache_base_dir = cache_base_dir
 
         # Define the models
         self.openai_model = OpenAIModel("o4-mini")
@@ -130,6 +142,25 @@ class AIProcessor:
             """,
         )
         self.categorisation_agent.instrument_all()
+
+        self.summary_agent = Agent(
+            self.current_model,
+            name="Summary Agent",
+            system_prompt="""
+            You are a technical content summarisation assistant. Your task is to create
+            concise, informative summaries of technical content.
+            
+            Focus on:
+            1. Key technical concepts and contributions
+            2. Main features or methodologies described
+            3. Potential applications or implications
+            4. Technical advantages or innovations
+            
+            Keep your summary clear, accurate, and focused on the technical aspects.
+            Remove marketing language and focus on factual information.
+            """
+        )
+        self.summary_agent.instrument_all()
 
         self.insights_agent = Agent(
             self.current_model,
@@ -202,44 +233,45 @@ class AIProcessor:
 
         # Update all agents to use the new model
         self.categorisation_agent.model = self.current_model
+        self.summary_agent.model = self.current_model
         self.insights_agent.model = self.current_model
         self.relevance_agent.model = self.current_model
 
         logger.info(f"Switched AI processor to provider: {provider}")
 
-    def _get_content_hash(self, content: str) -> str:
-        """Generate a hash for the content to use in filenames.
+    def _get_cache_key(self, content: str) -> str:
+        """Generate a hash for the content to use as a cache key.
 
         Args:
             content: The content to hash
 
         Returns:
-            A short hash string for the content
+            A short hash string for the content cache key
         """
         return hashlib.md5(content.encode("utf-8")).hexdigest()[:10]
 
-    def _get_newsletter_dir(self, newsletter_id: str) -> Path:
-        """Get the directory for storing newsletter outputs.
+    def _get_cache_dir(self, cache_id: str) -> Path:
+        """Get the directory for storing cache outputs.
 
         Args:
-            newsletter_id: Unique identifier for the newsletter
+            cache_id: Unique identifier for the cache entry
 
         Returns:
-            Path object for the newsletter directory
+            Path object for the cache directory
         """
-        newsletter_dir = Path(self.output_dir) / newsletter_id
-        newsletter_dir.mkdir(parents=True, exist_ok=True)
-        return newsletter_dir
+        cache_dir = Path(self.cache_base_dir) / cache_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
 
     def _check_cache(
-        self, file_path: Path, step_name: str, newsletter_id: str
+        self, file_path: Path, step_name: str, cache_id: str
     ) -> Optional[Dict[str, Any]]:
         """Check if cached output exists and load it.
 
         Args:
             file_path: Path to the cached file
             step_name: Name of the processing step
-            newsletter_id: ID of the newsletter
+            cache_id: ID for the cache entry
 
         Returns:
             The cached data if it exists, None otherwise
@@ -249,7 +281,7 @@ class AIProcessor:
                 with open(file_path, "r") as f:
                     data = json.load(f)
                 logger.info(
-                    f"✅ CACHE HIT: Found cached {step_name} data for newsletter '{newsletter_id}' at {file_path}"
+                    f"✅ CACHE HIT: Found cached {step_name} data for cache entry '{cache_id}' at {file_path}"
                 )
                 return data
             except Exception as e:
@@ -259,12 +291,12 @@ class AIProcessor:
                 return None
 
         logger.info(
-            f"❓ CACHE MISS: No cached {step_name} data found for newsletter '{newsletter_id}'"
+            f"❓ CACHE MISS: No cached {step_name} data found for cache entry '{cache_id}'"
         )
         return None
 
     def _save_to_cache(
-        self, file_path: Path, data: Any, step_name: str, newsletter_id: str
+        self, file_path: Path, data: Any, step_name: str, cache_id: str
     ) -> None:
         """Save data to cache file.
 
@@ -272,13 +304,13 @@ class AIProcessor:
             file_path: Path to save the cache file
             data: Data to cache
             step_name: Name of the processing step
-            newsletter_id: ID of the newsletter
+            cache_id: ID for the cache entry
         """
         try:
             with open(file_path, "w") as f:
                 json.dump(data, f, indent=2)
             logger.info(
-                f"💾 CACHE SAVED: {step_name} data for newsletter '{newsletter_id}' saved to {file_path}"
+                f"💾 CACHE SAVED: {step_name} data for cache entry '{cache_id}' saved to {file_path}"
             )
         except Exception as e:
             logger.error(
@@ -288,7 +320,7 @@ class AIProcessor:
     def categorise_content(
         self,
         content: str,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
         word_limit: int = CONFIG.get("MAX_CATEGORORISATION_TOKENS", 1000),
     ) -> Dict[str, Any]:
@@ -296,7 +328,7 @@ class AIProcessor:
 
         Args:
             content: The content to categorise.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            cache_id: Optional ID for caching (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
             word_limit: The maximum number of words to use for categorisation
         Returns:
@@ -312,31 +344,31 @@ class AIProcessor:
             Exception: If there's an error categorising the content.
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
-                newsletter_id = self._get_content_hash(content)
+            # Generate cache_id if not provided
+            if cache_id is None:
+                cache_id = self._get_cache_key(content)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "categorisation.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "categorisation.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
                 cached_data = self._check_cache(
-                    cache_file, "categorisation", newsletter_id
+                    cache_file, "categorisation", cache_id
                 )
                 if cached_data:
                     return cached_data
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing categorisation for newsletter '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing categorisation for cache entry '{cache_id}'"
                 )
 
             logger.info(
-                f"🔍 PROCESSING: Categorising content for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Categorising content for cache entry '{cache_id}' using {self.provider} model"
             )
             result = self.categorisation_agent.run_sync(
                 f"Please categorise the following technical content: {content[:word_limit]}"
@@ -350,13 +382,13 @@ class AIProcessor:
 
             # Save result to cache
             self._save_to_cache(
-                cache_file, categorisation, "categorisation", newsletter_id
+                cache_file, categorisation, "categorisation", cache_id
             )
 
             return categorisation
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to categorise content for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to categorise content for cache entry '{cache_id}': {e}"
             )
             raise
 
@@ -364,81 +396,53 @@ class AIProcessor:
         self,
         content: str,
         max_length: int = 200,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
-        """Summarise technical content.
+        """Generate a concise summary of the content.
 
         Args:
-            content: The content to summarise.
-            max_length: The maximum length of the summary in words.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            content: The content to summarise
+            max_length: Maximum summary length (words)
+            cache_id: Optional ID for caching (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
         Returns:
-            A summary of the content.
-
-        Raises:
-            Exception: If there's an error summarising the content.
+            A summarised version of the content
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
-                newsletter_id = self._get_content_hash(content)
+            # Generate cache_id if not provided
+            if cache_id is None:
+                cache_id = self._get_cache_key(content)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "summary.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "summary.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(cache_file, "summary", newsletter_id)
-                if cached_data and "summary" in cached_data:
+                cached_data = self._check_cache(cache_file, "summary", cache_id)
+                if cached_data:
                     return cached_data["summary"]
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing summary for newsletter '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing summary for cache entry '{cache_id}'"
                 )
 
-            # Create a summarisation agent on demand with a custom system prompt
-            summarisation_agent = Agent(
-                self.current_model,
-                name="Summarisation Agent",
-                system_prompt=f"""
-                You are a technical content summarisation assistant. Your task is to create
-                concise, informative summaries of technical content that capture the key
-                points while maintaining technical accuracy.
-                
-                Focus on:
-                1. The main technical concepts or innovations discussed
-                2. Key features or capabilities mentioned
-                3. Potential applications or implications
-                4. Any notable results or metrics
-                
-                Avoid:
-                1. Marketing language or hype
-                2. Redundant information
-                3. Overly basic explanations of well-known concepts
-                
-                Keep your summary clear, factual, and technically precise.
-                Your summary should be no more than {max_length} words.
-                """,
-            )
-
             logger.info(
-                f"🔍 PROCESSING: Summarising content for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Summarising content for cache entry '{cache_id}' using {self.provider} model"
             )
-            result = summarisation_agent.run_sync(
+            result = self.summary_agent.run_sync(
                 f"Please summarise the following technical content: {content}"
             )
 
             summary = result.output
 
             logger.info(
-                f"✅ COMPLETED: Generated summary of {len(summary.split())} words for newsletter '{newsletter_id}'"
+                f"✅ COMPLETED: Generated summary of {len(summary.split())} words for cache entry '{cache_id}'"
             )
 
             # Save result to cache
@@ -446,59 +450,56 @@ class AIProcessor:
                 cache_file,
                 {"summary": summary, "max_length": max_length},
                 "summary",
-                newsletter_id,
+                cache_id,
             )
 
             return summary
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to summarise content for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to summarise content for cache entry '{cache_id}': {e}"
             )
             raise
 
     def generate_insights(
         self,
         content: str,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> List[str]:
-        """Generate key insights from technical content.
+        """Extract key technical insights from the content.
 
         Args:
-            content: The content to analyse.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            content: The content to extract insights from
+            cache_id: Optional ID for caching (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
         Returns:
-            A list of key insights extracted from the content.
-
-        Raises:
-            Exception: If there's an error generating insights.
+            A list of technical insights
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
-                newsletter_id = self._get_content_hash(content)
+            # Generate cache_id if not provided
+            if cache_id is None:
+                cache_id = self._get_cache_key(content)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "insights.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "insights.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(cache_file, "insights", newsletter_id)
-                if cached_data and "insights" in cached_data:
+                cached_data = self._check_cache(cache_file, "insights", cache_id)
+                if cached_data:
                     return cached_data["insights"]
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing insights for newsletter '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing insights for cache entry '{cache_id}'"
                 )
 
             logger.info(
-                f"🔍 PROCESSING: Extracting insights for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Extracting insights for cache entry '{cache_id}' using {self.provider} model"
             )
             result = self.insights_agent.run_sync(
                 f"Please extract key technical insights from the following content: {content}"
@@ -507,32 +508,32 @@ class AIProcessor:
             insights = result.output.insights
 
             logger.info(
-                f"✅ COMPLETED: Generated {len(insights)} insights for newsletter '{newsletter_id}'"
+                f"✅ COMPLETED: Generated {len(insights)} insights for cache entry '{cache_id}'"
             )
 
             # Save result to cache
             self._save_to_cache(
-                cache_file, {"insights": insights}, "insights", newsletter_id
+                cache_file, {"insights": insights}, "insights", cache_id
             )
 
             return insights
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to generate insights for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to generate insights for cache entry '{cache_id}': {e}"
             )
             raise
 
     def evaluate_relevance(
         self,
         content: str,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> float:
         """Evaluate the technical relevance of content.
 
         Args:
             content: The content to evaluate.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            cache_id: Optional ID for caching (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
         Returns:
@@ -542,29 +543,29 @@ class AIProcessor:
             Exception: If there's an error evaluating relevance.
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
-                newsletter_id = self._get_content_hash(content)
+            # Generate cache_id if not provided
+            if cache_id is None:
+                cache_id = self._get_cache_key(content)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "relevance.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "relevance.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache(cache_file, "relevance", newsletter_id)
+                cached_data = self._check_cache(cache_file, "relevance", cache_id)
                 if cached_data and "relevance_score" in cached_data:
                     return cached_data["relevance_score"]
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing relevance score for newsletter '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing relevance score for cache entry '{cache_id}'"
                 )
 
             logger.info(
-                f"🔍 PROCESSING: Evaluating relevance for newsletter '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Evaluating relevance for cache entry '{cache_id}' using {self.provider} model"
             )
             result = self.relevance_agent.run_sync(
                 f"Please evaluate the technical relevance of the following content: {content}"
@@ -573,18 +574,18 @@ class AIProcessor:
             relevance = result.output.relevance_score
 
             logger.info(
-                f"✅ COMPLETED: Evaluated content relevance for newsletter '{newsletter_id}': {relevance}"
+                f"✅ COMPLETED: Evaluated content relevance for cache entry '{cache_id}': {relevance}"
             )
 
             # Save result to cache
             self._save_to_cache(
-                cache_file, {"relevance_score": relevance}, "relevance", newsletter_id
+                cache_file, {"relevance_score": relevance}, "relevance", cache_id
             )
 
             return relevance
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to evaluate relevance for newsletter '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to evaluate relevance for cache entry '{cache_id}': {e}"
             )
             raise
 
@@ -594,7 +595,7 @@ class AIProcessor:
         content: str,
         category: str,
         max_length: int = 300,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
         """Generate a newsletter section for the given content.
@@ -604,7 +605,7 @@ class AIProcessor:
             content: The content to include in the newsletter.
             category: The category of the content.
             max_length: The maximum length of the section in words.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            cache_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
         Returns:
@@ -614,33 +615,34 @@ class AIProcessor:
             Exception: If there's an error generating the newsletter section.
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
-                newsletter_id = self._get_content_hash(content)
+            # Generate cache_id if not provided
+            if cache_id is None:
+                cache_id = self._get_cache_key(content)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "newsletter_section.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "newsletter_section.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
                 cached_data = self._check_cache(
-                    cache_file, "newsletter section", newsletter_id
+                    cache_file, "newsletter section", cache_id
                 )
                 if cached_data and "section" in cached_data:
                     return cached_data["section"]
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing newsletter section for '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing newsletter section for '{cache_id}'"
                 )
 
             # Create a newsletter section agent on demand with a custom system prompt
             newsletter_section_agent = Agent(
                 self.current_model,
                 name="Section Creation Agent",
+                output_type=SectionOutput,
                 system_prompt=f"""
                 You are a technical newsletter section writer. Your task is to create
                 engaging, informative newsletter sections from technical content.
@@ -656,11 +658,13 @@ class AIProcessor:
                 while maintaining technical accuracy.
                 
                 Your section should be under {max_length} words.
+                
+                IMPORTANT: Return the section directly in the 'section' field without additional comments.
                 """,
             )
 
             logger.info(
-                f"🔍 PROCESSING: Generating newsletter section for '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Generating newsletter section for '{cache_id}' using {self.provider} model"
             )
             result = newsletter_section_agent.run_sync(
                 f"""
@@ -674,10 +678,10 @@ class AIProcessor:
                 """
             )
 
-            section = result.output
+            section = result.output.section
 
             logger.info(
-                f"✅ COMPLETED: Generated newsletter section of {len(section.split())} words for '{newsletter_id}'"
+                f"✅ COMPLETED: Generated newsletter section of {len(section.split())} words for '{cache_id}'"
             )
 
             # Save result to cache
@@ -690,13 +694,13 @@ class AIProcessor:
                     "max_length": max_length,
                 },
                 "newsletter section",
-                newsletter_id,
+                cache_id,
             )
 
             return section
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to generate newsletter section for '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to generate newsletter section for '{cache_id}': {e}"
             )
             raise
 
@@ -706,7 +710,7 @@ class AIProcessor:
         total_items: int,
         content_summary: Optional[str] = None,
         max_length: int = 150,
-        newsletter_id: Optional[str] = None,
+        cache_id: Optional[str] = None,
         force_refresh: bool = False,
     ) -> str:
         """Generate an introduction for the newsletter.
@@ -716,7 +720,7 @@ class AIProcessor:
             total_items: Total number of content items in the newsletter.
             content_summary: Optional summary of newsletter content to base introduction on.
             max_length: The maximum length of the introduction in words.
-            newsletter_id: Optional ID for the newsletter (defaults to content hash)
+            cache_id: Optional ID for the newsletter (defaults to content hash)
             force_refresh: If True, ignore cached results and reprocess
 
         Returns:
@@ -726,34 +730,35 @@ class AIProcessor:
             Exception: If there's an error generating the newsletter introduction.
         """
         try:
-            # Generate newsletter ID if not provided
-            if newsletter_id is None:
+            # Generate cache_id if not provided
+            if cache_id is None:
                 content_to_hash = f"{','.join(categories)}_{total_items}"
-                newsletter_id = self._get_content_hash(content_to_hash)
+                cache_id = self._get_cache_key(content_to_hash)
                 logger.info(
-                    f"Generated newsletter ID: {newsletter_id} (based on content hash)"
+                    f"Generated cache ID: {cache_id} (based on cache key)"
                 )
 
             # Set up output directory
-            newsletter_dir = self._get_newsletter_dir(newsletter_id)
-            cache_file = newsletter_dir / "newsletter_introduction.json"
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "newsletter_introduction.json"
 
             # Check cache first if not forcing refresh
             if not force_refresh:
                 cached_data = self._check_cache(
-                    cache_file, "newsletter introduction", newsletter_id
+                    cache_file, "newsletter introduction", cache_id
                 )
                 if cached_data and "introduction" in cached_data:
                     return cached_data["introduction"]
             else:
                 logger.info(
-                    f"🔄 CACHE BYPASS: Force refreshing newsletter introduction for '{newsletter_id}'"
+                    f"🔄 CACHE BYPASS: Force refreshing newsletter introduction for '{cache_id}'"
                 )
 
             # Create a newsletter introduction agent on demand with a custom system prompt
             newsletter_introduction_agent = Agent(
                 self.current_model,
                 name="Introduction Agent",
+                output_type=IntroductionOutput,
                 system_prompt=f"""
                 You are a technical newsletter introduction writer. Your task is to create
                 engaging, informative introductions for technical newsletters.
@@ -766,8 +771,9 @@ class AIProcessor:
                 
                 Keep your introduction concise, professional, and focused on technical content.
                 Write in a friendly but authoritative tone appropriate for a professional audience.
-                
                 Your introduction should be under {max_length} words.
+                
+                IMPORTANT: Return a SINGLE introduction in the 'introduction' field, NOT multiple options.
                 """,
             )
 
@@ -793,14 +799,14 @@ class AIProcessor:
                 """
 
             logger.info(
-                f"🔍 PROCESSING: Generating newsletter introduction for '{newsletter_id}' using {self.provider} model"
+                f"🔍 PROCESSING: Generating newsletter introduction for '{cache_id}' using {self.provider} model"
             )
             result = newsletter_introduction_agent.run_sync(prompt)
 
-            introduction = result.output
+            introduction = result.output.introduction
 
             logger.info(
-                f"✅ COMPLETED: Generated newsletter introduction of {len(introduction.split())} words for '{newsletter_id}'"
+                f"✅ COMPLETED: Generated newsletter introduction of {len(introduction.split())} words for '{cache_id}'"
             )
 
             # Save result to cache
@@ -813,13 +819,13 @@ class AIProcessor:
                     "max_length": max_length,
                 },
                 "newsletter introduction",
-                newsletter_id,
+                cache_id,
             )
 
             return introduction
         except Exception as e:
             logger.error(
-                f"❌ ERROR: Failed to generate newsletter introduction for '{newsletter_id}': {e}"
+                f"❌ ERROR: Failed to generate newsletter introduction for '{cache_id}': {e}"
             )
             raise
 
@@ -828,13 +834,13 @@ ai_processor = None
 
 
 def get_ai_processor(
-    provider: Optional[ModelProvider] = None, output_dir: str = "newsletter_cache"
+    provider: Optional[ModelProvider] = None, cache_base_dir: str = "newsletter_cache"
 ):
     """Get or create the singleton AI processor instance.
 
     Args:
         provider: Optional model provider to use (OpenAI or Gemini)
-        output_dir: Base directory to store newsletter outputs
+        cache_base_dir: Base directory for caching model outputs
 
     Returns:
         The AIProcessor instance.
@@ -851,7 +857,7 @@ def get_ai_processor(
                     else ModelProvider.OPENAI
                 )
 
-            ai_processor = AIProcessor(provider=provider, output_dir=output_dir)
+            ai_processor = AIProcessor(provider=provider, cache_base_dir=cache_base_dir)
         except Exception as e:
             logger.error(f"Error creating AIProcessor: {e}")
             raise
@@ -863,51 +869,52 @@ def get_ai_processor(
 
 
 def categorise_content(
-    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+    content: str, cache_id: Optional[str] = None, force_refresh: bool = False
 ) -> Dict[str, Any]:
-    """Categorise technical content into predefined categories.
-
-    This is a convenience function that uses the singleton ai_processor instance.
+    """Convenience function to categorise content using the default AI processor.
 
     Args:
-        content: The content to categorise.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        content: The content to categorise
+        cache_id: Optional ID for caching (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
-        A dictionary containing the category information.
+        A dictionary containing category information
     """
-    return get_ai_processor().categorise_content(
-        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+    processor = get_ai_processor()
+    return processor.categorise_content(
+        content=content, cache_id=cache_id, force_refresh=force_refresh
     )
 
 
 def summarise_content(
     content: str,
     max_length: int = 200,
-    newsletter_id: Optional[str] = None,
+    cache_id: Optional[str] = None,
     force_refresh: bool = False,
 ) -> str:
-    """Summarise technical content.
-
-    This is a convenience function that uses the singleton ai_processor instance.
+    """Convenience function to summarise content using the default AI processor.
 
     Args:
-        content: The content to summarise.
-        max_length: The maximum length of the summary in words.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        content: The content to summarise
+        max_length: Maximum summary length in words
+        cache_id: Optional ID for caching (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
-        A summary of the content.
+        A summary of the content
     """
-    return get_ai_processor().summarise_content(
-        content, max_length, newsletter_id=newsletter_id, force_refresh=force_refresh
+    processor = get_ai_processor()
+    return processor.summarise_content(
+        content=content,
+        max_length=max_length,
+        cache_id=cache_id,
+        force_refresh=force_refresh,
     )
 
 
 def generate_insights(
-    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+    content: str, cache_id: Optional[str] = None, force_refresh: bool = False
 ) -> List[str]:
     """Generate key insights from technical content.
 
@@ -915,19 +922,19 @@ def generate_insights(
 
     Args:
         content: The content to analyse.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        cache_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
         A list of key insights extracted from the content.
     """
     return get_ai_processor().generate_insights(
-        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+        content, cache_id=cache_id, force_refresh=force_refresh
     )
 
 
 def evaluate_relevance(
-    content: str, newsletter_id: Optional[str] = None, force_refresh: bool = False
+    content: str, cache_id: Optional[str] = None, force_refresh: bool = False
 ) -> float:
     """Evaluate the technical relevance of content.
 
@@ -935,14 +942,14 @@ def evaluate_relevance(
 
     Args:
         content: The content to evaluate.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        cache_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
         A relevance score between 0.0 and 1.0.
     """
     return get_ai_processor().evaluate_relevance(
-        content, newsletter_id=newsletter_id, force_refresh=force_refresh
+        content, cache_id=cache_id, force_refresh=force_refresh
     )
 
 
@@ -951,7 +958,7 @@ def generate_newsletter_section(
     content: str,
     category: str,
     max_length: int = 300,
-    newsletter_id: Optional[str] = None,
+    cache_id: Optional[str] = None,
     force_refresh: bool = False,
 ) -> str:
     """Generate a newsletter section for the given content.
@@ -963,7 +970,7 @@ def generate_newsletter_section(
         content: The content to include in the newsletter.
         category: The category of the content.
         max_length: The maximum length of the section in words.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        cache_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
@@ -974,7 +981,7 @@ def generate_newsletter_section(
         content,
         category,
         max_length,
-        newsletter_id=newsletter_id,
+        cache_id=cache_id,
         force_refresh=force_refresh,
     )
 
@@ -984,7 +991,7 @@ def generate_newsletter_introduction(
     total_items: int,
     content_summary: Optional[str] = None,
     max_length: int = 150,
-    newsletter_id: Optional[str] = None,
+    cache_id: Optional[str] = None,
     force_refresh: bool = False,
 ) -> str:
     """Generate an introduction for the newsletter.
@@ -996,7 +1003,7 @@ def generate_newsletter_introduction(
         total_items: Total number of content items in the newsletter.
         content_summary: Optional summary of newsletter content to base introduction on.
         max_length: The maximum length of the introduction in words.
-        newsletter_id: Optional ID for the newsletter (defaults to content hash)
+        cache_id: Optional ID for the newsletter (defaults to content hash)
         force_refresh: If True, ignore cached results and reprocess
 
     Returns:
@@ -1007,6 +1014,6 @@ def generate_newsletter_introduction(
         total_items,
         content_summary=content_summary,
         max_length=max_length,
-        newsletter_id=newsletter_id,
+        cache_id=cache_id,
         force_refresh=force_refresh,
     )

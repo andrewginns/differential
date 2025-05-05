@@ -113,7 +113,7 @@ class NewsletterAssembler:
                 if fingerprint:
                     processed_fingerprints.add(fingerprint)
                 
-                # Continue with normal categorization
+                # Continue with normal categorisation
                 if "category" not in item["metadata"]:
                     with logfire.span('categorise_content', attributes={"content_id": item["id"]}):
                         categorisation = processor.categorise_content(item["text"])
@@ -247,17 +247,7 @@ class NewsletterAssembler:
                         )
                         continue
                     
-                    # Fall back to content_id:title hash if no fingerprint (for backward compatibility)
-                    if not fingerprint:
-                        content_hash = hash(f"{content_id}:{title}")
-                        if content_hash in added_content_fingerprints:
-                            logger.warning(
-                                f"Skipping duplicate content ID {content_id} ({title}) in category '{category}' based on hash"
-                            )
-                            continue
-                        added_content_fingerprints.add(content_hash)
-                    else:
-                        added_content_fingerprints.add(fingerprint)
+                    added_content_fingerprints.add(fingerprint)
                     
                     with logfire.span('generate_newsletter_section'):
                         content_section = processor.generate_newsletter_section(
@@ -265,7 +255,7 @@ class NewsletterAssembler:
                             content=item["text"], 
                             category=category, 
                             max_length=200,
-                            newsletter_id=content_id
+                            cache_id=content_id
                         )
                     
                     section += f"{content_section}\n\n"
