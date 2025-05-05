@@ -14,6 +14,7 @@ from newsletter_generator.utils.config import CONFIG
 from newsletter_generator.storage import storage_manager
 from newsletter_generator.ai import processor
 from newsletter_generator.vector_db import lightrag_manager
+import logfire
 
 logger = get_logger("newsletter.assembler")
 
@@ -99,16 +100,17 @@ class NewsletterAssembler:
 
             for item in content_items:
                 if "category" not in item["metadata"]:
-                    categorisation = processor.categorise_content(item["text"])
-                    category = categorisation["primary_category"]
+                    with logfire.span('categorise_content', attributes={"content_id": item["id"]}):
+                        categorisation = processor.categorise_content(item["text"])
+                        category = categorisation["primary_category"]
 
-                    item["metadata"]["category"] = category
-                    item["metadata"]["secondary_categories"] = categorisation[
-                        "secondary_categories"
-                    ]
-                    item["metadata"]["tags"] = categorisation["tags"]
+                        item["metadata"]["category"] = category
+                        item["metadata"]["secondary_categories"] = categorisation[
+                            "secondary_categories"
+                        ]
+                        item["metadata"]["tags"] = categorisation["tags"]
 
-                    storage_manager.update_metadata(item["id"], item["metadata"])
+                        storage_manager.update_metadata(item["id"], item["metadata"])
                 else:
                     category = item["metadata"]["category"]
 
@@ -147,18 +149,20 @@ class NewsletterAssembler:
             content_summary = None
             if category_sections:
                 # Create a summary of the actual content
-                all_sections_text = "\n".join(category_sections.values())
-                content_summary = processor.summarise_content(
-                    all_sections_text, max_length=500
-                )
+                with logfire.span('summarise_all_sections', attributes={"category_count": len(category_sections)}):
+                    all_sections_text = "\n".join(category_sections.values())
+                    content_summary = processor.summarise_content(
+                        all_sections_text, max_length=500
+                    )
 
             # Use the dedicated newsletter introduction function
-            newsletter_introduction = processor.generate_newsletter_introduction(
-                categories=categories,
-                total_items=total_items,
-                content_summary=content_summary,
-                max_length=150,
-            )
+            with logfire.span('generate_newsletter_introduction', attributes={"categories": categories, "total_items": total_items}):
+                newsletter_introduction = processor.generate_newsletter_introduction(
+                    categories=categories,
+                    total_items=total_items,
+                    content_summary=content_summary,
+                    max_length=150,
+                )
 
             formatted_intro = f"""
 
@@ -210,40 +214,43 @@ class NewsletterAssembler:
                 url = item["metadata"].get("url", "")
                 content_id = item["id"]
 
-                if "summary" not in item["metadata"]:
-                    summary = processor.summarise_content(item["text"], max_length=100)
-                    item["metadata"]["summary"] = summary
-                    storage_manager.update_metadata(item["id"], item["metadata"])
-                else:
-                    summary = item["metadata"]["summary"]
+                with logfire.span('process_content_item', attributes={"content_id": content_id, "title": title, "category": category}):
+                    if "summary" not in item["metadata"]:
+                        with logfire.span('generate_summary'):
+                            summary = processor.summarise_content(item["text"], max_length=100)
+                            item["metadata"]["summary"] = summary
+                            storage_manager.update_metadata(item["id"], item["metadata"])
+                    else:
+                        summary = item["metadata"]["summary"]
 
-                # Use a combination of content_id and title as the content hash
-                # This ensures we don't repeat the same content even if the AI generates
-                # slightly different text
-                content_hash = hash(f"{content_id}:{title}")
-                
-                if content_hash in added_content_sections:
-                    logger.warning(
-                        f"Skipping duplicate content ID {content_id} ({title}) in category '{category}'"
-                    )
-                    continue
-                
-                added_content_sections.add(content_hash)
-                
-                content_section = processor.generate_newsletter_section(
-                    title=title, 
-                    content=item["text"], 
-                    category=category, 
-                    max_length=200,
-                    newsletter_id=content_id
-                )
-                
-                section += f"{content_section}\n\n"
+                    # Use a combination of content_id and title as the content hash
+                    # This ensures we don't repeat the same content even if the AI generates
+                    # slightly different text
+                    content_hash = hash(f"{content_id}:{title}")
+                    
+                    if content_hash in added_content_sections:
+                        logger.warning(
+                            f"Skipping duplicate content ID {content_id} ({title}) in category '{category}'"
+                        )
+                        continue
+                    
+                    added_content_sections.add(content_hash)
+                    
+                    with logfire.span('generate_newsletter_section'):
+                        content_section = processor.generate_newsletter_section(
+                            title=title, 
+                            content=item["text"], 
+                            category=category, 
+                            max_length=200,
+                            newsletter_id=content_id
+                        )
+                    
+                    section += f"{content_section}\n\n"
 
-                if url:
-                    section += f"[Read more]({url})\n\n"
+                    if url:
+                        section += f"[Read more]({url})\n\n"
 
-                section += "---\n\n"
+                    section += "---\n\n"
 
             logger.info(
                 f"Generated section for category '{category}' with {len(added_content_sections)} unique items"
@@ -269,62 +276,71 @@ class NewsletterAssembler:
             if model_provider is not None:
                 processor.get_ai_processor(provider=model_provider)
 
-            content_items = self.collect_weekly_content(days=days)
-
-            if not content_items:
-                logger.warning(f"No content found in the past {days} days")
-                return None
-
-            # Track content IDs that have been processed to avoid duplicate content
-            processed_content_ids = set()
-            
-            # Create a filtered categorised content dictionary
-            categorised_content = self.organise_by_category(content_items)
-            filtered_categorised_content = {}
-            
-            # First pass: filter out duplicate content items
-            for category, items in categorised_content.items():
-                filtered_items = []
-                for item in items:
-                    if item["id"] not in processed_content_ids:
-                        processed_content_ids.add(item["id"])
-                        filtered_items.append(item)
-                    else:
-                        logger.warning(
-                            f"Skipping duplicate content ID {item['id']} in category '{category}'"
-                        )
+            with logfire.span('newsletter_assembly', attributes={"days": days, "model_provider": str(model_provider)}):
+                logfire.info(f"Starting newsletter assembly for the past {days} days")
                 
-                if filtered_items:
-                    filtered_categorised_content[category] = filtered_items
-            
-            # Use the filtered content for the rest of the process
-            categorised_content = filtered_categorised_content
+                with logfire.span('collect_weekly_content'):
+                    content_items = self.collect_weekly_content(days=days)
 
-            # Generate category sections first
-            category_sections = {}
-            for category, items in sorted(categorised_content.items()):
-                section = self.generate_category_section(category, items)
-                category_sections[category] = section
+                if not content_items:
+                    logger.warning(f"No content found in the past {days} days")
+                    return None
 
-            # Generate introduction after all content has been processed
-            newsletter = self.generate_introduction(
-                categorised_content, category_sections
-            )
+                # Track content IDs that have been processed to avoid duplicate content
+                processed_content_ids = set()
+                
+                # Create a filtered categorised content dictionary
+                with logfire.span('organise_by_category'):
+                    categorised_content = self.organise_by_category(content_items)
+                    filtered_categorised_content = {}
+                    
+                    # First pass: filter out duplicate content items
+                    for category, items in categorised_content.items():
+                        filtered_items = []
+                        for item in items:
+                            if item["id"] not in processed_content_ids:
+                                processed_content_ids.add(item["id"])
+                                filtered_items.append(item)
+                            else:
+                                logger.warning(
+                                    f"Skipping duplicate content ID {item['id']} in category '{category}'"
+                                )
+                        
+                        if filtered_items:
+                            filtered_categorised_content[category] = filtered_items
+                
+                # Use the filtered content for the rest of the process
+                categorised_content = filtered_categorised_content
 
-            # Add all category sections to the newsletter
-            for category, section in category_sections.items():
-                newsletter += section
+                # Generate category sections first
+                category_sections = {}
+                with logfire.span('generate_category_sections', attributes={"categories": list(categorised_content.keys())}):
+                    for category, items in sorted(categorised_content.items()):
+                        with logfire.span('generate_category_section', attributes={"category": category, "item_count": len(items)}):
+                            section = self.generate_category_section(category, items)
+                            category_sections[category] = section
 
-            newsletter += f"\n\n---\n\n*This newsletter was automatically generated on {datetime.datetime.now().strftime('%B %d, %Y')}.*"
+                # Generate introduction after all content has been processed
+                with logfire.span('generate_introduction'):
+                    newsletter = self.generate_introduction(
+                        categorised_content, category_sections
+                    )
 
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-            filename = f"newsletter_{date_str}.md"
-            filepath = os.path.join(self.output_dir, filename)
+                # Add all category sections to the newsletter
+                for category, section in category_sections.items():
+                    newsletter += section
 
-            with open(filepath, "w") as f:
-                f.write(newsletter)
+                newsletter += f"\n\n---\n\n*This newsletter was automatically generated on {datetime.datetime.now().strftime('%B %d, %Y')}.*"
 
-            logger.info(f"Generated newsletter saved to {filepath}")
+                date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                filename = f"newsletter_{date_str}.md"
+                filepath = os.path.join(self.output_dir, filename)
+
+                with logfire.span('write_newsletter_to_file', attributes={"filepath": filepath}):
+                    with open(filepath, "w") as f:
+                        f.write(newsletter)
+
+                logfire.info(f"Generated newsletter saved to {filepath}")
 
             return filepath
         except Exception as e:
