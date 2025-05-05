@@ -77,22 +77,15 @@ class HTMLContentFetcher:
                 # Log the available attributes for debugging
                 logger.debug(f"Available attributes in CrawlResult: {dir(result)}")
 
-                # Get the markdown content - recent versions use a dedicated markdown attribute
+                # Get the markdown content - Crawl4AI object returns "Most relevant content in markdown"
                 markdown_content = ""
                 if hasattr(result, "markdown"):
-                    if isinstance(result.markdown, str):
-                        markdown_content = result.markdown
-                    elif hasattr(result.markdown, "raw_markdown"):
-                        markdown_content = result.markdown.raw_markdown
-                    elif hasattr(result.markdown, "fit_markdown"):
-                        markdown_content = result.markdown.fit_markdown
+                    markdown_content = result.markdown.fit_markdown
 
-                # Get HTML content - may be under cleaned_html or html attribute
+                # Get HTML content - Crawl4AI object returns "Clean HTML"
                 html_content = ""
                 if hasattr(result, "cleaned_html"):
                     html_content = result.cleaned_html
-                elif hasattr(result, "html"):
-                    html_content = result.html
 
                 # Extract title - could be in metadata or elsewhere
                 title = url  # Default to URL if no title is found
