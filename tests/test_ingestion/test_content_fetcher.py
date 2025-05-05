@@ -22,9 +22,12 @@ class TestHTMLContentFetcher:
 
         mock_result = MagicMock()
         mock_result.success = True
-        mock_result.markdown = "# Test Markdown"
-        mock_result.html = "<h1>Test HTML</h1>"
-        mock_result.title = "Test Title"
+        mock_markdown = MagicMock()
+        mock_markdown.fit_markdown = "# Test Markdown"
+        mock_result.markdown = mock_markdown
+        mock_result.cleaned_html = "<h1>Test HTML</h1>"
+        mock_result.metadata = MagicMock()
+        mock_result.metadata.title = "Test Title"
 
         mock_crawler.arun.return_value = mock_result
 
@@ -38,7 +41,7 @@ class TestHTMLContentFetcher:
 
         mock_crawler_class.assert_called_once()
         mock_crawler.arun.assert_called_once()
-        mock_crawler.stop.assert_called_once()
+        mock_crawler.close.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("newsletter_generator.ingestion.content_fetcher.AsyncWebCrawler")
@@ -60,7 +63,7 @@ class TestHTMLContentFetcher:
 
         mock_crawler_class.assert_called_once()
         mock_crawler.arun.assert_called_once()
-        mock_crawler.stop.assert_called_once()
+        mock_crawler.close.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("newsletter_generator.ingestion.content_fetcher.AsyncWebCrawler")
@@ -78,6 +81,7 @@ class TestHTMLContentFetcher:
 
         mock_crawler_class.assert_called_once()
         mock_crawler.arun.assert_called_once()
+
 
 
 class TestPDFContentFetcher:

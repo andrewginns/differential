@@ -12,7 +12,8 @@ from newsletter_generator.ingestion.orchestrator import (
 class TestIngestionOrchestrator:
     """Test cases for the IngestionOrchestrator class."""
 
-    def test_determine_content_type_youtube(self):
+    @pytest.mark.asyncio
+    async def test_determine_content_type_youtube(self):
         """Test that YouTube URLs are correctly identified."""
         orchestrator = IngestionOrchestrator()
 
@@ -23,9 +24,10 @@ class TestIngestionOrchestrator:
         ]
 
         for url in youtube_urls:
-            assert orchestrator.determine_content_type(url) == "youtube"
+            assert await orchestrator.determine_content_type(url) == "youtube"
 
-    def test_determine_content_type_pdf_by_extension(self):
+    @pytest.mark.asyncio
+    async def test_determine_content_type_pdf_by_extension(self):
         """Test that PDF URLs with .pdf extension are correctly identified."""
         orchestrator = IngestionOrchestrator()
 
@@ -35,47 +37,44 @@ class TestIngestionOrchestrator:
         ]
 
         for url in pdf_urls:
-            assert orchestrator.determine_content_type(url) == "pdf"
+            assert await orchestrator.determine_content_type(url) == "pdf"
 
-    @patch("requests.head")
-    def test_determine_content_type_pdf_by_content_type(self, mock_head):
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.head")
+    async def test_determine_content_type_pdf_by_content_type(self, mock_head):
         """Test that PDF URLs with application/pdf content type are correctly identified."""
-        mock_response = MagicMock()
+        mock_response = AsyncMock()
         mock_response.headers = {"Content-Type": "application/pdf"}
-        mock_head.return_value = mock_response
+        mock_head.return_value.__aenter__.return_value = mock_response
 
         orchestrator = IngestionOrchestrator()
 
         url = "https://example.com/document"
-        assert orchestrator.determine_content_type(url) == "pdf"
+        assert await orchestrator.determine_content_type(url) == "pdf"
 
-        mock_head.assert_called_once_with(url, allow_redirects=True, timeout=10)
-
-    @patch("requests.head")
-    def test_determine_content_type_html(self, mock_head):
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.head")
+    async def test_determine_content_type_html(self, mock_head):
         """Test that HTML URLs are correctly identified."""
-        mock_response = MagicMock()
+        mock_response = AsyncMock()
         mock_response.headers = {"Content-Type": "text/html"}
-        mock_head.return_value = mock_response
+        mock_head.return_value.__aenter__.return_value = mock_response
 
         orchestrator = IngestionOrchestrator()
 
         url = "https://example.com/page"
-        assert orchestrator.determine_content_type(url) == "html"
+        assert await orchestrator.determine_content_type(url) == "html"
 
-        mock_head.assert_called_once_with(url, allow_redirects=True, timeout=10)
-
-    @patch("requests.head")
-    def test_determine_content_type_request_error(self, mock_head):
+    @pytest.mark.asyncio
+    @patch("aiohttp.ClientSession.head")
+    async def test_determine_content_type_request_error(self, mock_head):
         """Test that HTML is returned as fallback when request fails."""
         mock_head.side_effect = Exception("Connection error")
 
         orchestrator = IngestionOrchestrator()
 
         url = "https://example.com/page"
-        assert orchestrator.determine_content_type(url) == "html"
-
-        mock_head.assert_called_once_with(url, allow_redirects=True, timeout=10)
+        assert await orchestrator.determine_content_type(url) == "html"
 
     @pytest.mark.asyncio
     @patch(

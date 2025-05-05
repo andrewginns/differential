@@ -7,6 +7,7 @@ without requiring the WhatsApp webhook.
 import asyncio
 import argparse
 from typing import List
+import pytest
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
@@ -16,6 +17,7 @@ from newsletter_generator.storage import storage_manager
 logger = get_logger("ingestion.test")
 
 
+@pytest.mark.skip(reason="This is a utility function for manual testing, not an automated test")
 async def test_ingest_url(url: str) -> None:
     """Test ingesting a single URL.
 
@@ -54,6 +56,7 @@ async def test_ingest_url(url: str) -> None:
         print(f"Error: {e}")
 
 
+@pytest.mark.skip(reason="This is a utility function for manual testing, not an automated test")
 async def test_ingest_multiple_urls(urls: List[str]) -> None:
     """Test ingesting multiple URLs.
 

@@ -137,10 +137,13 @@ class TestWebhookEndpoints:
 
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
-        assert response.json() == {"status": "success"}
+        response_json = response.json()
+        assert response_json["status"] == "success"
+        assert "processed_urls" in response_json
+        assert "total_processed" in response_json
 
         mock_logger.info.assert_any_call("Extracted 1 URLs from message: ['https://example.com']")
-        mock_logger.info.assert_any_call("URL to process: https://example.com")
+        mock_logger.info.assert_any_call("Processing URL: https://example.com")
 
     @patch("newsletter_generator.whatsapp.webhook_receiver.logger")
     def test_receive_webhook_with_no_urls(self, mock_logger):
@@ -170,7 +173,11 @@ class TestWebhookEndpoints:
 
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
-        assert response.json() == {"status": "success"}
+        response_json = response.json()
+        assert response_json["status"] == "success"
+        assert "processed_urls" in response_json
+        assert "total_processed" in response_json
+        assert response_json["total_processed"] == 0
 
         mock_logger.info.assert_any_call("No URLs found in message")
 
@@ -212,7 +219,10 @@ class TestWebhookEndpoints:
 
         response = self.client.post("/webhook", json=payload)
         assert response.status_code == 200
-        assert response.json() == {"status": "success"}
+        response_json = response.json()
+        assert response_json["status"] == "success"
+        assert "processed_urls" in response_json
+        assert "total_processed" in response_json
 
 
 if __name__ == "__main__":

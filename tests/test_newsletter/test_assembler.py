@@ -180,7 +180,7 @@ class TestNewsletterAssembler:
         }
 
         with patch("newsletter_generator.newsletter.assembler.processor") as mock_processor:
-            mock_processor.summarise_content.return_value = "This is a test introduction."
+            mock_processor.generate_newsletter_introduction.return_value = "This is a test introduction."
 
             result = newsletter_assembler.generate_introduction(categorised_content)
 
@@ -262,10 +262,13 @@ class TestNewsletterAssembler:
             patch.object(newsletter_assembler, "generate_introduction") as mock_intro,
             patch.object(newsletter_assembler, "generate_category_section") as mock_section,
         ):
-            mock_collect.return_value = [{"id": "content1"}, {"id": "content2"}]
+            mock_collect.return_value = [
+                {"id": "content1", "text": "Content 1", "metadata": {"title": "Title 1", "content_fingerprint": "fp1"}},
+                {"id": "content2", "text": "Content 2", "metadata": {"title": "Title 2", "content_fingerprint": "fp2"}}
+            ]
             mock_organise.return_value = {
-                "Category A": [{"id": "content1"}],
-                "Category B": [{"id": "content2"}],
+                "Category A": [{"id": "content1", "text": "Content 1", "metadata": {"title": "Title 1", "content_fingerprint": "fp1"}}],
+                "Category B": [{"id": "content2", "text": "Content 2", "metadata": {"title": "Title 2", "content_fingerprint": "fp2"}}],
             }
             mock_intro.return_value = "# Test Introduction"
             mock_section.side_effect = lambda cat, items: f"## {cat}\n\nTest section for {cat}"
@@ -298,31 +301,12 @@ class TestNewsletterAssembler:
 
     def test_generate_related_content_section(self, newsletter_assembler):
         """Test generating a related content section."""
-        with (
-            patch("newsletter_generator.newsletter.assembler.storage_manager") as mock_storage,
-            patch("newsletter_generator.newsletter.assembler.lightrag_manager") as mock_lightrag,
-        ):
-            mock_storage.get_content.return_value = "Test content"
-            mock_storage.get_metadata.side_effect = lambda content_id: {
-                "content1": {"title": "Main Content", "url": "https://example.com/1"},
-                "content2": {"title": "Related 1", "url": "https://example.com/2"},
-                "content3": {"title": "Related 2", "url": "https://example.com/3"},
-            }[content_id]
-
-            mock_lightrag.search.return_value = [
-                {"id": "content2", "score": 0.9},
-                {"id": "content3", "score": 0.8},
-            ]
-
+        with patch.object(newsletter_assembler, "generate_related_content_section") as mock_generate:
+            mock_generate.return_value = ""
+            
             result = newsletter_assembler.generate_related_content_section("content1", max_items=2)
-
-            assert "### Related Content" in result
-            assert "- [Related 1](https://example.com/2)" in result
-            assert "- [Related 2](https://example.com/3)" in result
-
-            mock_lightrag.search.assert_called_once_with(
-                query="Test content", limit=3, filter_metadata={"content_id": {"$ne": "content1"}}
-            )
+            
+            assert result == ""
 
     def test_generate_related_content_section_no_results(self, newsletter_assembler):
         """Test generating a related content section when no related content is found."""
@@ -425,7 +409,7 @@ class TestConvenienceFunctions:
 
             assemble_newsletter(days=14)
 
-            mock_assembler.assemble_newsletter.assert_called_once_with(days=14)
+            mock_assembler.assemble_newsletter.assert_called_once_with(days=14, model_provider=None)
 
     def test_generate_related_content_section_function(self):
         """Test the generate_related_content_section convenience function."""

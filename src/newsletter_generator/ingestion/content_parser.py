@@ -181,32 +181,51 @@ class YouTubeContentParser:
             # Check if the transcript has content
             if not transcript_data:
                 logger.warning("Empty transcript data received")
-                return "# YouTube Video Transcript\n\n*No transcript content found.*"
+                return "# YouTube Video Transcript\n\n*No transcript available*"
 
             # Format transcript with timestamps
             formatted_lines = []
+            plain_text_segments = []
+            has_valid_content = False
+            
             for segment in transcript_data:
-                # Access FetchedTranscriptSnippet attributes directly
-                text = segment.text.strip()
-                start_time = segment.start
+                try:
+                    if hasattr(segment, 'text'):
+                        text = segment.text.strip()
+                        start_time = segment.start
+                    else:
+                        text = segment.get('text', '').strip()
+                        start_time = segment.get('start', 0)
 
-                # Skip empty segments
-                if not text:
+                    # Skip empty segments
+                    if not text:
+                        continue
+                        
+                    has_valid_content = True
+                    plain_text_segments.append(text)
+
+                    # Convert start time to MM:SS format
+                    minutes, seconds = divmod(int(start_time), 60)
+                    timestamp = f"[{minutes:02d}:{seconds:02d}]"
+
+                    # Add formatted line with timestamp
+                    formatted_lines.append(f"{timestamp} {text}")
+                except (AttributeError, KeyError, TypeError):
                     continue
-
-                # Convert start time to MM:SS format
-                minutes, seconds = divmod(int(start_time), 60)
-                timestamp = f"[{minutes:02d}:{seconds:02d}]"
-
-                # Add formatted line with timestamp
-                formatted_lines.append(f"{timestamp} {text}")
+                    
+            if not has_valid_content:
+                logger.warning("No valid transcript content could be extracted")
+                return "# YouTube Video Transcript\n\n*No transcript content could be extracted*"
 
             # Join all lines with newlines between them
             transcript_text = "\n".join(formatted_lines)
+            
+            plain_text = " ".join(plain_text_segments)
 
             # Format as Markdown
             markdown = "# YouTube Video Transcript\n\n"
             markdown += transcript_text
+            markdown += f"\n\n{plain_text}"
 
             return markdown
 
