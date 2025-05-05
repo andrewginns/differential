@@ -29,6 +29,8 @@ DEFAULT_CONFIG = {
     "WEBHOOK_PATH": "/webhook",
     # WhatsApp Business API configuration
     "WHATSAPP_VERIFY_TOKEN": None,  # Must be provided in environment
+    # Token efficiency configuration
+    "MAX_CATEGORORISATION_TOKENS": 1000,  # Maximum number of tokens for determining categorisation
 }
 
 

@@ -290,7 +290,7 @@ class AIProcessor:
         content: str,
         newsletter_id: Optional[str] = None,
         force_refresh: bool = False,
-        word_limit: int = 1000,
+        word_limit: int = CONFIG.get("MAX_CATEGORORISATION_TOKENS", 1000),
     ) -> Dict[str, Any]:
         """Categorise technical content into predefined categories.
 
