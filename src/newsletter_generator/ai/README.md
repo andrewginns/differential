@@ -1,13 +1,13 @@
-# Newsletter Generator - AI Processing
+# Newsletter Generator - LLM Processing
 
-This module handles the AI-powered processing of technical content for the newsletter generator. It uses PydanticAI to interface with LLM models (OpenAI and Gemini) for content processing.
+This module handles the LLM-powered processing of technical content for the newsletter generator. It uses PydanticAI to interface with LLM models (OpenAI and Gemini) for content processing.
 
 ## Newsletter Generation Process
 
-1. **Content Categorization**
-   - Analyzes technical content and categorizes it into primary and secondary categories
+1. **Content Categorisation**
+   - Analyses technical content and categorises it into primary and secondary categories
    - Assigns relevant tags to each piece of content
-   - Provides a confidence score for categorization
+   - Provides a confidence score for categorisation
 
 2. **Technical Relevance Evaluation**
    - Assesses how relevant the content is for technical professionals
@@ -19,7 +19,7 @@ This module handles the AI-powered processing of technical content for the newsl
    - Focuses on novel approaches, performance improvements, innovative solutions, and emerging trends
    - Presents insights as concise, actionable information
 
-4. **Content Summarization**
+4. **Content Summarisation**
    - Creates concise, informative summaries of technical content
    - Highlights main technical concepts, key features, and potential applications
    - Maintains technical accuracy while removing marketing language
@@ -29,12 +29,17 @@ This module handles the AI-powered processing of technical content for the newsl
    - Includes catchy introductions, concise summaries, and calls to action
    - Outputs properly formatted Markdown with appropriate headings and formatting
 
+6. **Newsletter Introduction Generation**
+   - Creates an engaging introduction for the entire newsletter
+   - Highlights key themes and categories across all content
+   - Sets the tone and encourages readers to explore the different sections
+
 ## Checkpointing and Fault Tolerance
 
 Each step of the newsletter generation process is automatically saved to disk in a dedicated subfolder:
 
 - All outputs are stored in a folder structure: `newsletter_cache/<cache_id>/`
-- Each processing step saves its result to a separate JSON file (e.g., `categorization.json`, `insights.json`)
+- Each processing step saves its result to a separate JSON file (e.g., `categorisation.json`, `insights.json`)
 - If a process fails midway, it can be resumed by using the same `cache_id` in subsequent calls
 - The system automatically uses cached results unless `force_refresh=True` is specified
 
@@ -47,7 +52,7 @@ This provides fault tolerance against:
 
 Each piece of content is assigned a unique `cache_id`:
 - Automatically generated as an MD5 hash of the content (by default)
-- Can be manually specified for better tracking and organization
+- Can be manually specified for better tracking and organisation
 - All outputs for a specific content are stored in its dedicated folder
 
 ### Logging and Monitoring
@@ -74,24 +79,35 @@ The module provides both an `AIProcessor` class and convenience functions for di
 
 ```python
 from newsletter_generator.ai.processor import (
-    categorize_content,
-    summarize_content,
+    categorise_content,
+    summarise_content,
     generate_insights,
     evaluate_relevance,
-    generate_newsletter_section
+    generate_newsletter_section,
+    generate_newsletter_introduction
 )
 
 # Process an article with automatic checkpointing
 cache_id = "tech_news_2023_06_15"  # Optional custom ID
-category_info = categorize_content(article_text, cache_id=cache_id)
+category_info = categorise_content(article_text, cache_id=cache_id)
 relevance = evaluate_relevance(article_text, cache_id=cache_id)
 insights = generate_insights(article_text, cache_id=cache_id)
-summary = summarize_content(article_text, max_length=200, cache_id=cache_id)
+summary = summarise_content(article_text, max_length=200, cache_id=cache_id)
 section = generate_newsletter_section(
     article_title, 
     article_text, 
     category_info["primary_category"],
+    max_length=300,
     cache_id=cache_id
+)
+
+# Generate an introduction for the entire newsletter
+introduction = generate_newsletter_introduction(
+    categories=["AI", "Frontend", "Cloud Computing"],
+    total_items=12,
+    content_summary="Summary of the newsletter content",
+    max_length=150,
+    cache_id="newsletter_2023_06_15"
 )
 
 # Force regeneration of a specific step

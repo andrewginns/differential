@@ -1,11 +1,11 @@
-# Newsletter Generator
+# Differential - Newsletter Generator
 
-An automated system for generating weekly technical newsletters from shared URLs.
+End-to-end Newsletter Generation. Creates newsletters based on the last x days of information extracted from content links.
 
 ## Features
 - Ingests content from URLs shared in WhatsApp
 - Processes web pages, PDFs, and YouTube videos
-- Uses AI to categorize and summarize content
+- Uses LLMs to categorise and summarise content
 - Assembles a weekly newsletter in Markdown format
 
 ## Setup
@@ -23,7 +23,7 @@ WHATSAPP_VERIFY_TOKEN=your_secure_random_token
 
 ### Model Provider Configuration
 
-The newsletter generator now supports two AI providers:
+The newsletter generator now supports two LLM providers:
 
 1. **OpenAI** (default): Uses OpenAI's models for content processing
 2. **Gemini**: Uses Google's Gemini models for content processing
@@ -130,23 +130,23 @@ Note: The ngrok URL changes each time you restart ngrok unless you have a paid p
 
 1. **URL Reception**: URLs are received through the WhatsApp webhook.
 2. **Content Type Detection**: System automatically detects if the URL is a webpage, PDF, or YouTube video.
-3. **Content Fetching**: Content is fetched from the source using specialized fetchers for each content type.
+3. **Content Fetching**: Content is fetched from the source using specialised fetchers for each content type.
 4. **Content Parsing**: Raw content is parsed and converted to a structured format.
-5. **Content Standardization**: All content is standardized to a uniform format for storage.
+5. **Content Standardisation**: All content is standardised to a uniform format for storage.
 6. **Storage**: Processed content is stored with relevant metadata for later use.
 
 ### Newsletter Generation
 
 1. **Content Collection**: The system collects all content ingested in the last week.
-2. **AI Processing**: Content is categorized and summarized using AI.
-3. **Content Organization**: Content is organized by category.
+2. **LLM Processing**: Content is categorised and summarised using LLM.
+3. **Content Organisation**: Content is organised by category.
 4. **Newsletter Assembly**: A markdown document is assembled with all processed content.
 
-## Customizing the Newsletter
+## Customising the Newsletter
 
-You can customize the newsletter generation by modifying the following:
+You can customise the newsletter generation by modifying the following:
 
-- Content categorization: Update AI prompts in the `ai/processor.py` file
+- Content categorisation: Update LLM prompts in the `ai/processor.py` file
 - Newsletter template: Modify the `assemble_newsletter` method in `newsletter/assembler.py`
 - Content sources: Currently supports web pages, PDFs, and YouTube videos
 
@@ -179,8 +179,8 @@ This allows you to:
 The newsletter generator implements a comprehensive deduplication system to prevent the same content from appearing multiple times in your newsletters:
 
 ### URL-Based Deduplication
-- URLs are normalized to remove tracking parameters (utm_source, fbclid, etc.)
-- Identical URLs with different tracking parameters are recognized as duplicates
+- URLs are normalised to remove tracking parameters (utm_source, fbclid, etc.)
+- Identical URLs with different tracking parameters are recognised as duplicates
 - Shares of the same URL on different days are automatically detected
 
 ### Content-Based Deduplication
