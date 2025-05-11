@@ -79,7 +79,7 @@ Processes HTML content from web pages:
 
 Processes PDF documents:
 - **Fetch**: Downloads PDF files
-- **Parse**: Extracts text and metadata using PyPDF2
+- **Parse**: Extracts text and metadata using PyMuPDF and pymupdf4llm
 - **Standardise**: Formats content into a consistent Markdown structure
 
 ### YouTubeContentProcessor
