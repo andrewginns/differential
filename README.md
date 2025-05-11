@@ -130,12 +130,16 @@ Note: The ngrok URL changes each time you restart ngrok unless you have a paid p
 
 ### Ingestion Pipeline
 
-1. **URL Reception**: URLs are received through the WhatsApp webhook.
+1. **URL Reception**: URLs are received through the WhatsApp webhook with robust error handling.
 2. **Content Type Detection**: System automatically detects if the URL is a webpage, PDF, or YouTube video.
-3. **Content Fetching**: Content is fetched from the source using specialised fetchers for each content type.
-4. **Content Parsing**: Raw content is parsed and converted to a structured format.
-5. **Content Standardisation**: All content is standardised to a uniform format for storage.
-6. **Storage**: Processed content is stored with relevant metadata for later use.
+3. **Content Processing**: Content is processed using a polymorphic architecture:
+   - **Fetching**: Content is fetched from the source using the appropriate processor
+   - **Parsing**: Raw content is parsed into a structured format
+   - **Standardisation**: All content is standardised to a uniform format
+4. **Storage**: Processed content is stored with relevant metadata for later use.
+
+For more details on the ingestion architecture, see the [Ingestion Documentation](src/newsletter_generator/ingestion/README.md).
+For more details on the WhatsApp integration, see the [WhatsApp Documentation](src/newsletter_generator/whatsapp/README.md).
 
 ### Newsletter Generation
 

@@ -1,7 +1,7 @@
 """Ingestion orchestrator for the newsletter generator.
 
 This module orchestrates the ingestion process for URLs, determining content type
-and routing to appropriate fetchers, parsers, and standardisers.
+and routing to appropriate content processors.
 """
 
 import re
@@ -17,6 +17,7 @@ from tenacity import (
 import aiohttp
 
 from newsletter_generator.utils.logging_utils import get_logger
+from newsletter_generator.ingestion.content_processor import ContentProcessorFactory
 
 logger = get_logger("ingestion.orchestrator")
 
@@ -24,36 +25,13 @@ logger = get_logger("ingestion.orchestrator")
 class IngestionOrchestrator:
     """Orchestrates the ingestion process for URLs.
 
-    This class determines the content type of a URL, routes it to the appropriate
-    content fetcher, parser, and standardiser, and manages the overall ingestion
-    process including retries.
+    This class determines the content type of a URL, obtains the appropriate
+    content processor, and manages the overall ingestion process including retries.
     """
 
     def __init__(self):
         """Initialise the ingestion orchestrator."""
-        from newsletter_generator.ingestion.content_fetcher import (
-            HTMLContentFetcher,
-            PDFContentFetcher,
-            YouTubeContentFetcher,
-        )
-        from newsletter_generator.ingestion.content_parser import (
-            HTMLContentParser,
-            PDFContentParser,
-            YouTubeContentParser,
-        )
-        from newsletter_generator.ingestion.content_standardiser import (
-            ContentStandardiser,
-        )
-
-        self.html_fetcher = HTMLContentFetcher()
-        self.pdf_fetcher = PDFContentFetcher()
-        self.youtube_fetcher = YouTubeContentFetcher()
-
-        self.html_parser = HTMLContentParser()
-        self.pdf_parser = PDFContentParser()
-        self.youtube_parser = YouTubeContentParser()
-
-        self.standardiser = ContentStandardiser()
+        pass
 
     async def determine_content_type(self, url: str) -> str:
         """Determine the content type of a URL asynchronously.
@@ -129,33 +107,16 @@ class IngestionOrchestrator:
         content_type = await self.determine_content_type(url)
         logger.info(f"Determined content type for {url}: {content_type}")
 
-        raw_content = None
-        if content_type == "html":
-            raw_content = await self.html_fetcher.fetch(url)
-        elif content_type == "pdf":
-            raw_content = await self.pdf_fetcher.fetch(url)
-        elif content_type == "youtube":
-            raw_content = await self.youtube_fetcher.fetch(url)
-        else:
-            raise ValueError(f"Unsupported content type: {content_type}")
-
-        parsed_content = None
-        if content_type == "html":
-            parsed_content = self.html_parser.parse(raw_content, url)
-        elif content_type == "pdf":
-            parsed_content = self.pdf_parser.parse(raw_content)
-        elif content_type == "youtube":
-            parsed_content = self.youtube_parser.parse(raw_content)
-
-        standardised_content = self.standardiser.standardise(parsed_content)
-
-        metadata = {
-            "url": url,
-            "source_type": content_type,
-            "status": "pending_ai",
-        }
-
-        return standardised_content, metadata
+        try:
+            processor = ContentProcessorFactory.get_processor(content_type)
+            standardised_content, metadata = await processor.process(url)
+            return standardised_content, metadata
+        except ValueError:
+            logger.error(f"Unsupported content type: {content_type}")
+            raise
+        except Exception as e:
+            logger.error(f"Error processing URL {url}: {e}")
+            raise
 
 
 # Create a singleton instance
