@@ -327,17 +327,8 @@ class NewsletterAssembler:
                                 )
                                 continue
 
-                            # Fall back to content_id for backward compatibility
-                            if fingerprint:
-                                processed_fingerprints.add(fingerprint)
-                            else:
-                                content_id = item["id"]
-                                if content_id in processed_fingerprints:
-                                    logger.warning(
-                                        f"Skipping duplicate content ID {content_id} in category '{category}'"
-                                    )
-                                    continue
-                                processed_fingerprints.add(content_id)
+                            # Add fingerprint to processed set
+                            processed_fingerprints.add(fingerprint)
 
                             filtered_items.append(item)
 
@@ -398,7 +389,9 @@ class NewsletterAssembler:
         """
         try:
             # Functionality marked as inactive
-            logger.info(f"Related content generation is currently inactive (content_id: {content_id})")
+            logger.info(
+                f"Related content generation is currently inactive (content_id: {content_id})"
+            )
             return ""
 
             # Original implementation below is inactive

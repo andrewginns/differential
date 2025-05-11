@@ -8,6 +8,7 @@ This module provides classes for fetching content from different sources:
 
 import asyncio
 from typing import Dict, Any, List
+import concurrent.futures
 
 import requests
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
@@ -200,20 +201,25 @@ class YouTubeContentFetcher:
             video_id = self._extract_video_id(url)
             logger.debug(f"Extracted video ID: {video_id}")
 
-            loop = asyncio.get_event_loop()
-            transcript_list = await loop.run_in_executor(
-                None, lambda: YouTubeTranscriptApi.list_transcripts(video_id)
-            )
+            # Use a ThreadPoolExecutor directly instead of relying on the event loop
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                # List transcripts
+                transcript_list_future = executor.submit(
+                    YouTubeTranscriptApi.list_transcripts, video_id
+                )
+                transcript_list = transcript_list_future.result()
 
-            try:
-                transcript = transcript_list.find_transcript(["en"])
-            except Exception:
                 try:
-                    transcript = transcript_list.find_generated_transcript(["en"])
+                    transcript = transcript_list.find_transcript(["en"])
                 except Exception:
-                    transcript = transcript_list.find_transcript(["en", "es", "fr", "de"])
+                    try:
+                        transcript = transcript_list.find_generated_transcript(["en"])
+                    except Exception:
+                        transcript = transcript_list.find_transcript(["en", "es", "fr", "de"])
 
-            transcript_data = await loop.run_in_executor(None, lambda: transcript.fetch())
+                # Fetch the transcript data
+                transcript_data_future = executor.submit(transcript.fetch)
+                transcript_data = transcript_data_future.result()
 
             return transcript_data
         except TranscriptsDisabled:

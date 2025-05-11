@@ -187,20 +187,20 @@ class YouTubeContentParser:
             formatted_lines = []
             plain_text_segments = []
             has_valid_content = False
-            
+
             for segment in transcript_data:
                 try:
-                    if hasattr(segment, 'text'):
+                    if hasattr(segment, "text"):
                         text = segment.text.strip()
                         start_time = segment.start
                     else:
-                        text = segment.get('text', '').strip()
-                        start_time = segment.get('start', 0)
+                        text = segment.get("text", "").strip()
+                        start_time = segment.get("start", 0)
 
                     # Skip empty segments
                     if not text:
                         continue
-                        
+
                     has_valid_content = True
                     plain_text_segments.append(text)
 
@@ -212,14 +212,14 @@ class YouTubeContentParser:
                     formatted_lines.append(f"{timestamp} {text}")
                 except (AttributeError, KeyError, TypeError):
                     continue
-                    
+
             if not has_valid_content:
                 logger.warning("No valid transcript content could be extracted")
                 return "# YouTube Video Transcript\n\n*No transcript content could be extracted*"
 
             # Join all lines with newlines between them
             transcript_text = "\n".join(formatted_lines)
-            
+
             plain_text = " ".join(plain_text_segments)
 
             # Format as Markdown

@@ -10,14 +10,15 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.models.gemini import GeminiModel
 
 from newsletter_generator.utils.logging_utils import get_logger
-from newsletter_generator.utils.config import CONFIG
-from newsletter_generator.utils.caching import Cache, AtomicFileWriter
+from newsletter_generator.utils.config import (
+    CONFIG,
+)
 import logfire
 
 # Configure Logfire
@@ -41,6 +42,8 @@ class ModelProvider(str, Enum):
 class CategoryOutput(BaseModel):
     """Pydantic model for categorisation output."""
 
+    model_config = ConfigDict()
+
     primary_category: str = Field(description="The primary category of the content")
     secondary_categories: List[str] = Field(
         description="Secondary categories if applicable", max_items=3
@@ -52,6 +55,8 @@ class CategoryOutput(BaseModel):
 class InsightsOutput(BaseModel):
     """Pydantic model for insights output."""
 
+    model_config = ConfigDict()
+
     insights: List[str] = Field(
         description="Key technical insights extracted from the content",
         min_items=3,
@@ -62,6 +67,8 @@ class InsightsOutput(BaseModel):
 class RelevanceOutput(BaseModel):
     """Pydantic model for relevance evaluation."""
 
+    model_config = ConfigDict()
+
     relevance_score: float = Field(
         description="Relevance score between 0.0 and 1.0", ge=0.0, le=1.0
     )
@@ -70,11 +77,15 @@ class RelevanceOutput(BaseModel):
 class IntroductionOutput(BaseModel):
     """Pydantic model for newsletter introduction output."""
 
+    model_config = ConfigDict()
+
     introduction: str = Field(description="The formatted newsletter introduction text")
 
 
 class SectionOutput(BaseModel):
     """Pydantic model for newsletter section output."""
+
+    model_config = ConfigDict()
 
     section: str = Field(description="The formatted newsletter section text in Markdown")
 
@@ -101,8 +112,6 @@ class AIProcessor:
         """
         self.provider = provider
         self.cache_base_dir = cache_base_dir
-        
-        self.cache = Cache(self.cache_base_dir)
 
         # Define the models
         self.openai_model = OpenAIModel("o4-mini")
@@ -244,7 +253,7 @@ class AIProcessor:
         Returns:
             A short hash string for the content cache key
         """
-        return self.cache._get_cache_key(content)
+        return hashlib.md5(content.encode("utf-8")).hexdigest()[:10]
 
     def _get_cache_dir(self, cache_id: str) -> Path:
         """Get the directory for storing cache outputs.
@@ -255,46 +264,57 @@ class AIProcessor:
         Returns:
             Path object for the cache directory
         """
-        return Path(self.cache_base_dir)
+        cache_dir = Path(self.cache_base_dir) / cache_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
 
     def _check_cache(
-        self, step_name: str, cache_id: str
+        self, file_path: Path, step_name: str, cache_id: str
     ) -> Optional[Dict[str, Any]]:
         """Check if cached output exists and load it.
 
         Args:
+            file_path: Path to the cached file
             step_name: Name of the processing step
             cache_id: ID for the cache entry
 
         Returns:
             The cached data if it exists, None otherwise
         """
-        cached_data = self.cache.get(cache_id, step_name)
-        
-        if cached_data:
-            logger.info(
-                f"✅ CACHE HIT: Found cached {step_name} data for cache entry '{cache_id}'"
-            )
-            return cached_data
+        if file_path.exists():
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                logger.info(
+                    f"✅ CACHE HIT: Found cached {step_name} data for cache entry '{cache_id}' at {file_path}"
+                )
+                return data
+            except Exception as e:
+                logger.warning(
+                    f"❌ CACHE ERROR: Failed to load {step_name} cache from {file_path}: {e}"
+                )
+                return None
 
         logger.info(f"❓ CACHE MISS: No cached {step_name} data found for cache entry '{cache_id}'")
         return None
 
-    def _save_to_cache(self, data: Any, step_name: str, cache_id: str) -> None:
-        """Save data to cache.
+    def _save_to_cache(self, file_path: Path, data: Any, step_name: str, cache_id: str) -> None:
+        """Save data to cache file.
 
         Args:
+            file_path: Path to save the cache file
             data: Data to cache
             step_name: Name of the processing step
             cache_id: ID for the cache entry
         """
         try:
-            self.cache.set(cache_id, step_name, data)
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
             logger.info(
-                f"💾 CACHE SAVED: {step_name} data for cache entry '{cache_id}' saved"
+                f"💾 CACHE SAVED: {step_name} data for cache entry '{cache_id}' saved to {file_path}"
             )
         except Exception as e:
-            logger.error(f"❌ CACHE ERROR: Failed to save {step_name} data: {e}")
+            logger.error(f"❌ CACHE ERROR: Failed to save {step_name} data to {file_path}: {e}")
 
     def categorise_content(
         self,
@@ -328,9 +348,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "categorisation.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("categorisation", cache_id)
+                cached_data = self._check_cache(cache_file, "categorisation", cache_id)
                 if cached_data:
                     return cached_data
             else:
@@ -352,7 +376,7 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache(categorisation, "categorisation", cache_id)
+            self._save_to_cache(cache_file, categorisation, "categorisation", cache_id)
 
             return categorisation
         except Exception as e:
@@ -385,9 +409,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "summary.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("summary", cache_id)
+                cached_data = self._check_cache(cache_file, "summary", cache_id)
                 if cached_data:
                     return cached_data["summary"]
             else:
@@ -410,6 +438,7 @@ class AIProcessor:
 
             # Save result to cache
             self._save_to_cache(
+                cache_file,
                 {"summary": summary, "max_length": max_length},
                 "summary",
                 cache_id,
@@ -442,9 +471,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "insights.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("insights", cache_id)
+                cached_data = self._check_cache(cache_file, "insights", cache_id)
                 if cached_data:
                     return cached_data["insights"]
             else:
@@ -466,7 +499,7 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache({"insights": insights}, "insights", cache_id)
+            self._save_to_cache(cache_file, {"insights": insights}, "insights", cache_id)
 
             return insights
         except Exception as e:
@@ -498,9 +531,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "relevance.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("relevance", cache_id)
+                cached_data = self._check_cache(cache_file, "relevance", cache_id)
                 if cached_data and "relevance_score" in cached_data:
                     return cached_data["relevance_score"]
             else:
@@ -522,7 +559,7 @@ class AIProcessor:
             )
 
             # Save result to cache
-            self._save_to_cache({"relevance_score": relevance}, "relevance", cache_id)
+            self._save_to_cache(cache_file, {"relevance_score": relevance}, "relevance", cache_id)
 
             return relevance
         except Exception as e:
@@ -562,9 +599,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "newsletter_section.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("newsletter section", cache_id)
+                cached_data = self._check_cache(cache_file, "newsletter section", cache_id)
                 if cached_data and "section" in cached_data:
                     return cached_data["section"]
             else:
@@ -620,6 +661,7 @@ class AIProcessor:
 
             # Save result to cache
             self._save_to_cache(
+                cache_file,
                 {
                     "section": section,
                     "title": title,
@@ -667,9 +709,13 @@ class AIProcessor:
                 cache_id = self._get_cache_key(content_to_hash)
                 logger.info(f"Generated cache ID: {cache_id} (based on cache key)")
 
+            # Set up output directory
+            cache_dir = self._get_cache_dir(cache_id)
+            cache_file = cache_dir / "newsletter_introduction.json"
+
             # Check cache first if not forcing refresh
             if not force_refresh:
-                cached_data = self._check_cache("newsletter introduction", cache_id)
+                cached_data = self._check_cache(cache_file, "newsletter introduction", cache_id)
                 if cached_data and "introduction" in cached_data:
                     return cached_data["introduction"]
             else:
@@ -734,6 +780,7 @@ class AIProcessor:
 
             # Save result to cache
             self._save_to_cache(
+                cache_file,
                 {
                     "introduction": introduction,
                     "categories": categories,
