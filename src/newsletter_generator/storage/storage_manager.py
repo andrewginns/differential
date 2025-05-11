@@ -10,9 +10,11 @@ import datetime
 import yaml
 import uuid
 from typing import Dict, Any, List, Optional, Tuple
+from pathlib import Path
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
+from newsletter_generator.utils.caching import Cache, AtomicFileWriter
 from newsletter_generator.utils.deduplication import (
     get_url_hash,
     generate_content_fingerprint,
@@ -37,12 +39,15 @@ class StorageManager:
                 from config.
         """
         self.data_dir = data_dir or CONFIG.get("DATA_DIR", "data")
-
+        
         os.makedirs(self.data_dir, exist_ok=True)
-
+        
         # Initialise indices for deduplication
         self.url_hash_index = {}  # url_hash -> content_id
         self.fingerprint_index = {}  # content_fingerprint -> content_id
+        
+        self.cache = Cache(self.data_dir)
+        
         self._build_deduplication_indices()
 
     def _build_deduplication_indices(self):
@@ -105,26 +110,22 @@ class StorageManager:
         """
         return calculate_content_similarity(content1, content2)
 
-    def _generate_file_path(self, url: str, source_type: str) -> str:
-        """Generate a file path for a URL.
+    def _generate_file_path(self, content_id: str, source_type: str) -> str:
+        """Generate a file path for a content ID.
 
         Args:
-            url: The source URL.
+            content_id: The content ID.
             source_type: The content type (html, pdf, youtube).
 
         Returns:
             The file path to store the content at.
         """
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:10]
-
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-
-        day_dir = os.path.join(self.data_dir, today)
-        os.makedirs(day_dir, exist_ok=True)
-
-        filename = f"{source_type}_{url_hash}.md"
-
-        return os.path.join(day_dir, filename)
+        prefix = content_id[:2]
+        
+        dir_path = os.path.join(self.data_dir, prefix, content_id)
+        os.makedirs(dir_path, exist_ok=True)
+        
+        return os.path.join(dir_path, f"{source_type}.md")
 
     def store_content(self, content: str, metadata: Dict[str, Any]) -> str:
         """Store content and metadata with a unique content ID.
@@ -137,61 +138,78 @@ class StorageManager:
             The content ID (which can be used to retrieve or update the content later).
 
         Raises:
+            ValueError: If required metadata is missing.
             Exception: If there's an error storing the content.
         """
-        if "url" not in metadata:
-            raise ValueError("Metadata must include 'url'")
+        try:
+            if "url" not in metadata:
+                raise ValueError("Metadata must include 'url'")
 
-        if "source_type" not in metadata:
-            raise ValueError("Metadata must include 'source_type'")
+            if "source_type" not in metadata:
+                raise ValueError("Metadata must include 'source_type'")
 
-        # Check for URL-based duplicates
-        url = metadata["url"]
-        url_hash = get_url_hash(url)
-        existing_id = self._find_by_url_hash(url_hash)
+            # Check for URL-based duplicates
+            url = metadata["url"]
+            url_hash = get_url_hash(url)
+            existing_id = self._find_by_url_hash(url_hash)
 
-        if existing_id:
-            logger.info(f"Found duplicate URL: {url} matches existing content_id: {existing_id}")
-            return existing_id
+            if existing_id:
+                logger.info(f"Found duplicate URL: {url} matches existing content_id: {existing_id}")
+                return existing_id
 
-        # Check for content-based duplicates
-        title = metadata.get("title", "")
-        content_fingerprint = generate_content_fingerprint(content, title)
+            # Check for content-based duplicates
+            title = metadata.get("title", "")
+            content_fingerprint = generate_content_fingerprint(content, title)
 
-        duplicate_id = self._find_by_content_fingerprint(content_fingerprint)
-        if duplicate_id:
-            # Double check with similarity to avoid false positives
-            existing_content = self.get_content(duplicate_id)
-            similarity = self._calculate_similarity(content, existing_content)
+            duplicate_id = self._find_by_content_fingerprint(content_fingerprint)
+            if duplicate_id:
+                # Double check with similarity to avoid false positives
+                existing_content = self.get_content(duplicate_id)
+                similarity = self._calculate_similarity(content, existing_content)
 
-            if similarity > 0.85:  # High threshold to avoid false positives
-                logger.info(
-                    f"Found similar content with ID {duplicate_id}, similarity: {similarity}"
-                )
-                return duplicate_id
+                if similarity > 0.85:  # High threshold to avoid false positives
+                    logger.info(
+                        f"Found similar content with ID {duplicate_id}, similarity: {similarity}"
+                    )
+                    return duplicate_id
 
-        # Generate a unique content ID
-        content_id = str(uuid.uuid4())
+            # Generate a unique content ID
+            content_id = str(uuid.uuid4())
 
-        # Add content ID and deduplication data to metadata
-        metadata["content_id"] = content_id
-        metadata["url_hash"] = url_hash
-        metadata["content_fingerprint"] = content_fingerprint
+            # Add content ID and deduplication data to metadata
+            metadata["content_id"] = content_id
+            metadata["url_hash"] = url_hash
+            metadata["content_fingerprint"] = content_fingerprint
 
-        if "date_added" not in metadata:
-            metadata["date_added"] = datetime.datetime.now().isoformat()
+            if "date_added" not in metadata:
+                metadata["date_added"] = datetime.datetime.now().isoformat()
 
-        # Write the content to a file
-        file_path = self.write_content(content, metadata)
+            self.cache.set(content_id, "metadata", metadata)
+            
+            # Update our indices
+            self.url_hash_index[url_hash] = content_id
+            self.fingerprint_index[content_fingerprint] = content_id
+            
+            self.cache.set("url_hash", url_hash, {"content_id": content_id})
+            self.cache.set("fingerprint", content_fingerprint, {"content_id": content_id})
 
-        # Map content_id to file_path in the content registry
-        self._update_content_registry(content_id, file_path)
+            # Write the content to a file
+            source_type = metadata["source_type"]
+            file_path = self._generate_file_path(content_id, source_type)
+            
+            full_content = "---\n"
+            yaml_content = yaml.dump(metadata, default_flow_style=False)
+            full_content += yaml_content
+            full_content += "---\n\n"
+            full_content += content
+            
+            AtomicFileWriter.write(file_path, full_content)
+            logger.info(f"Stored content with ID {content_id} at {file_path}")
 
-        # Update our indices
-        self.url_hash_index[url_hash] = content_id
-        self.fingerprint_index[content_fingerprint] = content_id
-
-        return content_id
+            return content_id
+        except Exception as e:
+            logger.error(f"Error storing content: {e}")
+            raise
 
     def _update_content_registry(self, content_id: str, file_path: str) -> None:
         """Update the content registry with a mapping from content ID to file path.
@@ -243,25 +261,38 @@ class StorageManager:
         Raises:
             ValueError: If the content ID is not found.
         """
-        registry_path = os.path.join(self.data_dir, "content_registry.yaml")
-
-        if not os.path.exists(registry_path):
-            raise ValueError(f"Content ID not found: {content_id}")
-
         try:
-            with open(registry_path, "r", encoding="utf-8") as f:
-                registry = yaml.safe_load(f) or {}
+            # Check if we have metadata cached
+            metadata = self.cache.get(content_id, "metadata")
+            
+            if metadata is None:
+                prefix = content_id[:2]
+                dir_path = os.path.join(self.data_dir, prefix, content_id)
+                
+                if not os.path.exists(dir_path):
+                    raise ValueError(f"Content ID not found: {content_id}")
+                    
+                for filename in os.listdir(dir_path):
+                    if filename.endswith(".md"):
+                        file_path = os.path.join(dir_path, filename)
+                        content, metadata = self.read_content(file_path)
+                        
+                        self.cache.set(content_id, "metadata", metadata)
+                        
+                        return content
+                        
+                raise ValueError(f"No content file found for ID: {content_id}")
+            else:
+                source_type = metadata.get("source_type")
+                if not source_type:
+                    raise ValueError(f"Invalid metadata for content ID: {content_id}")
+                    
+                file_path = self._generate_file_path(content_id, source_type)
+                content, _ = self.read_content(file_path)
+                return content
         except Exception as e:
-            logger.error(f"Error reading content registry: {e}")
+            logger.error(f"Error getting content for ID {content_id}: {e}")
             raise
-
-        if content_id not in registry:
-            raise ValueError(f"Content ID not found: {content_id}")
-
-        file_path = registry[content_id]
-
-        content, _ = self.read_content(file_path)
-        return content
 
     def list_content(self) -> Dict[str, Dict[str, Any]]:
         """List all content with their metadata.
@@ -269,27 +300,50 @@ class StorageManager:
         Returns:
             A dictionary mapping content IDs to metadata.
         """
-        registry_path = os.path.join(self.data_dir, "content_registry.yaml")
-
-        if not os.path.exists(registry_path):
-            return {}
-
-        try:
-            with open(registry_path, "r", encoding="utf-8") as f:
-                registry = yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.error(f"Error reading content registry: {e}")
-            return {}
-
         result = {}
-        for content_id, file_path in registry.items():
-            try:
-                _, metadata = self.read_content(file_path)
-                result[content_id] = metadata
-            except Exception as e:
-                logger.warning(f"Error reading metadata for content ID {content_id}: {e}")
-
-        return result
+        try:
+            for prefix_dir in os.listdir(self.data_dir):
+                prefix_path = os.path.join(self.data_dir, prefix_dir)
+                
+                if not os.path.isdir(prefix_path) or prefix_dir.startswith('.'):
+                    continue
+                    
+                for content_id_dir in os.listdir(prefix_path):
+                    content_id_path = os.path.join(prefix_path, content_id_dir)
+                    
+                    if not os.path.isdir(content_id_path):
+                        continue
+                        
+                    # Check if this looks like a content ID directory (should match the prefix)
+                    if not content_id_dir.startswith(prefix_dir):
+                        continue
+                        
+                    for filename in os.listdir(content_id_path):
+                        if filename.endswith('.md'):
+                            file_path = os.path.join(content_id_path, filename)
+                            try:
+                                _, metadata = self.read_content(file_path)
+                                
+                                if metadata.get('content_id') == content_id_dir:
+                                    result[content_id_dir] = metadata
+                                    
+                                    self.cache.set(content_id_dir, "metadata", metadata)
+                                    
+                                    url_hash = metadata.get('url_hash')
+                                    if url_hash:
+                                        self.url_hash_index[url_hash] = content_id_dir
+                                        
+                                    fingerprint = metadata.get('content_fingerprint')
+                                    if fingerprint:
+                                        self.fingerprint_index[fingerprint] = content_id_dir
+                            except Exception as e:
+                                logger.warning(f"Error reading metadata from {file_path}: {e}")
+            
+            logger.info(f"Listed {len(result)} content items")
+            return result
+        except Exception as e:
+            logger.error(f"Error listing content: {e}")
+            return {}
 
     def write_content(self, content: str, metadata: Dict[str, Any]) -> str:
         """Write content and metadata to a file.
@@ -377,12 +431,18 @@ class StorageManager:
             content, metadata = self.read_content(file_path)
 
             metadata.update(metadata_updates)
+            
+            content_id = metadata.get("content_id")
+            if content_id:
+                self.cache.set(content_id, "metadata", metadata)
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("---\n")
-                yaml.dump(metadata, f, default_flow_style=False)
-                f.write("---\n\n")
-                f.write(content)
+            full_content = "---\n"
+            yaml_content = yaml.dump(metadata, default_flow_style=False)
+            full_content += yaml_content
+            full_content += "---\n\n"
+            full_content += content
+            
+            AtomicFileWriter.write(file_path, full_content)
 
             logger.info(f"Updated metadata in {file_path}")
         except Exception as e:
@@ -400,42 +460,85 @@ class StorageManager:
             A list of file paths matching the criteria.
         """
         matching_files = []
+        cutoff_date = None
+        
+        if days is not None:
+            cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
 
         try:
-            date_dirs = [
-                d
-                for d in os.listdir(self.data_dir)
-                if os.path.isdir(os.path.join(self.data_dir, d))
-                and d.count("-") == 2  # Simple check for date format
-            ]
-
-            date_dirs.sort(reverse=True)
-
-            if days is not None:
-                cutoff_date = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime(
-                    "%Y-%m-%d"
-                )
-                date_dirs = [d for d in date_dirs if d >= cutoff_date]
-
-            for date_dir in date_dirs:
-                dir_path = os.path.join(self.data_dir, date_dir)
-                for filename in os.listdir(dir_path):
-                    if not filename.endswith(".md"):
+            all_content = self.list_content()
+            
+            for content_id, metadata in all_content.items():
+                if metadata.get("status") != status:
+                    continue
+                    
+                if cutoff_date is not None:
+                    date_added_str = metadata.get("date_added")
+                    if not date_added_str:
                         continue
-
-                    file_path = os.path.join(dir_path, filename)
+                        
                     try:
-                        _, metadata = self.read_content(file_path)
-                        if metadata.get("status") == status:
-                            matching_files.append(file_path)
-                    except Exception as e:
-                        logger.warning(f"Error reading metadata from {file_path}: {e}")
-
+                        if date_added_str.endswith('Z'):
+                            date_added_str = date_added_str[:-1]  # Remove 'Z' suffix
+                        date_added = datetime.datetime.fromisoformat(date_added_str)
+                        if date_added < cutoff_date:
+                            continue
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid date format in metadata for content ID {content_id}")
+                        continue
+                
+                source_type = metadata.get("source_type")
+                if not source_type:
+                    continue
+                    
+                file_path = self._generate_file_path(content_id, source_type)
+                matching_files.append(file_path)
+            
+            logger.info(f"Found {len(matching_files)} files with status '{status}'")
             return matching_files
         except Exception as e:
             logger.error(f"Error finding files by status: {e}")
             return []
 
+    def get_metadata(self, content_id: str) -> Dict[str, Any]:
+        """Get metadata by content ID.
+
+        Args:
+            content_id: The content ID.
+
+        Returns:
+            The metadata dictionary.
+
+        Raises:
+            ValueError: If the content ID is not found.
+        """
+        try:
+            # Check if we have metadata cached
+            metadata = self.cache.get(content_id, "metadata")
+            
+            if metadata is not None:
+                return metadata
+                
+            prefix = content_id[:2]
+            dir_path = os.path.join(self.data_dir, prefix, content_id)
+            
+            if not os.path.exists(dir_path):
+                raise ValueError(f"Content ID not found: {content_id}")
+                
+            for filename in os.listdir(dir_path):
+                if filename.endswith(".md"):
+                    file_path = os.path.join(dir_path, filename)
+                    _, metadata = self.read_content(file_path)
+                    
+                    if metadata:
+                        self.cache.set(content_id, "metadata", metadata)
+                        return metadata
+                        
+            raise ValueError(f"No metadata found for content ID: {content_id}")
+        except Exception as e:
+            logger.error(f"Error getting metadata for ID {content_id}: {e}")
+            raise
+            
     def cleanup_old_files(self, ttl_days: Optional[int] = None) -> int:
         """Delete files older than the TTL.
 
@@ -447,35 +550,57 @@ class StorageManager:
         """
         ttl_days = ttl_days or CONFIG.get("TTL_DAYS", 60)
         cutoff_date = datetime.datetime.now() - datetime.timedelta(days=ttl_days)
-        cutoff_str = cutoff_date.strftime("%Y-%m-%d")
-
+        
         deleted_count = 0
 
         try:
-            date_dirs = [
-                d
-                for d in os.listdir(self.data_dir)
-                if os.path.isdir(os.path.join(self.data_dir, d))
-                and d.count("-") == 2  # Simple check for date format
-            ]
-
-            for date_dir in date_dirs:
-                if date_dir < cutoff_str:
-                    dir_path = os.path.join(self.data_dir, date_dir)
-                    for filename in os.listdir(dir_path):
-                        file_path = os.path.join(dir_path, filename)
-                        try:
-                            os.remove(file_path)
-                            deleted_count += 1
-                            logger.debug(f"Deleted old file: {file_path}")
-                        except Exception as e:
-                            logger.warning(f"Error deleting file {file_path}: {e}")
-
+            all_content = self.list_content()
+            
+            for content_id, metadata in all_content.items():
+                date_added_str = metadata.get("date_added")
+                if not date_added_str:
+                    continue
+                    
+                try:
+                    if date_added_str.endswith('Z'):
+                        date_added_str = date_added_str[:-1]  # Remove 'Z' suffix
+                    date_added = datetime.datetime.fromisoformat(date_added_str)
+                    if date_added >= cutoff_date:
+                        continue  # Skip content that's not old enough
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid date format in metadata for content ID {content_id}")
+                    continue
+                
+                prefix = content_id[:2]
+                content_dir = os.path.join(self.data_dir, prefix, content_id)
+                
+                if not os.path.exists(content_dir):
+                    continue
+                
+                for filename in os.listdir(content_dir):
+                    file_path = os.path.join(content_dir, filename)
                     try:
-                        os.rmdir(dir_path)
-                        logger.debug(f"Deleted empty directory: {dir_path}")
-                    except OSError:
-                        pass
+                        os.remove(file_path)
+                        deleted_count += 1
+                        logger.debug(f"Deleted old file: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"Error deleting file {file_path}: {e}")
+                
+                try:
+                    os.rmdir(content_dir)
+                    logger.debug(f"Deleted content directory: {content_dir}")
+                except OSError as e:
+                    logger.warning(f"Error removing directory {content_dir}: {e}")
+                
+                self.cache.delete(content_id, "metadata")
+                
+                url_hash = metadata.get("url_hash")
+                if url_hash and self.url_hash_index.get(url_hash) == content_id:
+                    self.url_hash_index.pop(url_hash)
+                
+                fingerprint = metadata.get("content_fingerprint")
+                if fingerprint and self.fingerprint_index.get(fingerprint) == content_id:
+                    self.fingerprint_index.pop(fingerprint)
 
             logger.info(f"Cleaned up {deleted_count} files older than {ttl_days} days")
             return deleted_count
@@ -522,24 +647,33 @@ def update_metadata(content_id: str, metadata_updates: Dict[str, Any]) -> None:
         content_id: The content ID.
         metadata_updates: The metadata fields to update.
     """
-    registry_path = os.path.join(_storage_manager.data_dir, "content_registry.yaml")
-
-    if not os.path.exists(registry_path):
-        raise ValueError(f"Content ID not found: {content_id}")
-
     try:
-        with open(registry_path, "r", encoding="utf-8") as f:
-            registry = yaml.safe_load(f) or {}
+        metadata = _storage_manager.cache.get(content_id, "metadata")
+        
+        if metadata is None:
+            prefix = content_id[:2]
+            dir_path = os.path.join(_storage_manager.data_dir, prefix, content_id)
+            
+            if not os.path.exists(dir_path):
+                raise ValueError(f"Content ID not found: {content_id}")
+                
+            for filename in os.listdir(dir_path):
+                if filename.endswith(".md"):
+                    file_path = os.path.join(dir_path, filename)
+                    _storage_manager.update_metadata(file_path, metadata_updates)
+                    return
+                    
+            raise ValueError(f"No content file found for ID: {content_id}")
+        else:
+            source_type = metadata.get("source_type")
+            if not source_type:
+                raise ValueError(f"Invalid metadata for content ID: {content_id}")
+                
+            file_path = _storage_manager._generate_file_path(content_id, source_type)
+            _storage_manager.update_metadata(file_path, metadata_updates)
     except Exception as e:
-        logger.error(f"Error reading content registry: {e}")
+        logger.error(f"Error updating metadata for content ID {content_id}: {e}")
         raise
-
-    if content_id not in registry:
-        raise ValueError(f"Content ID not found: {content_id}")
-
-    file_path = registry[content_id]
-
-    _storage_manager.update_metadata(file_path, metadata_updates)
 
 
 def list_content() -> Dict[str, Dict[str, Any]]:

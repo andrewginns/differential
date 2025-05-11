@@ -1,6 +1,6 @@
 # Differential - Newsletter Generator
 
-End-to-end Newsletter Generation. Creates newsletters based on the last x days of information extracted from content links.
+End-to-end newsletter generation. Creates newsletters based on the last x days of information extracted from content links.
 
 ![Differential Hero](docs/images/differential_hero.png)
 
@@ -25,10 +25,10 @@ WHATSAPP_VERIFY_TOKEN=your_secure_random_token
 
 ### Model Provider Configuration
 
-The newsletter generator now supports two LLM providers:
+Differential supports two LLM providers:
 
-1. **OpenAI** (default): Uses OpenAI's models for content processing
-2. **Gemini**: Uses Google's Gemini models for content processing
+1. **Gemini** (default): Uses Google's Gemini models for content processing
+2. **OpenAI**: Uses OpenAI's models for content processing
 
 You can configure the provider in several ways:
 
@@ -176,9 +176,15 @@ This allows you to:
 - Test different content types (HTML, PDF, YouTube)
 - Debug issues with content fetching and processing
 
-## Content Deduplication
+## Content Storage and Deduplication
 
-The newsletter generator implements a comprehensive deduplication system to prevent the same content from appearing multiple times in your newsletters:
+Differential implements a content-addressed storage system with comprehensive deduplication to efficiently manage content and prevent duplicates:
+
+### Content-Addressed Storage
+- Content is stored using a content ID as the primary identifier
+- Files are organised in a predictable path structure: `{data_dir}/{content_id[:2]}/{content_id}/{source_type}.md`
+- The file system serves as the single source of truth
+- For more details, see the [Storage Documentation](data/STORAGE.md)
 
 ### URL-Based Deduplication
 - URLs are normalised to remove tracking parameters (utm_source, fbclid, etc.)
@@ -190,16 +196,23 @@ The newsletter generator implements a comprehensive deduplication system to prev
 - Similar content from different URLs can be detected as duplicates
 - Prevents different articles discussing the same topic with very similar text
 
+### Unified Caching System
+- Common caching interface used by both storage and AI processing
+- Atomic file operations prevent corruption during updates
+- Transaction-like operations ensure consistency
+- Enhanced error handling with automatic recovery
+
 ### How It Works
 1. When content is ingested, it's assigned both a URL hash and a content fingerprint
-2. During ingestion, the system checks if similar content already exists
-3. During newsletter assembly, additional fingerprint checks prevent duplicates from different categories
+2. Content is stored in a content-addressed structure for efficient retrieval
+3. During ingestion, the system checks if similar content already exists
+4. During newsletter assembly, additional fingerprint checks prevent duplicates from different categories
 
 This allows the system to:
 - Prevent duplicate URLs from being processed multiple times
 - Save processing time and API costs
 - Ensure newsletters contain truly unique content
 - Handle the case of the same URL being shared multiple times
+- Provide reliable and efficient content storage
 
-No configuration is needed - deduplication is automatically enabled for all new content.
-
+No configuration is needed - the storage system and deduplication are automatically enabled for all new content.
