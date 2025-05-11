@@ -2,24 +2,119 @@
 
 This module implements a FastAPI endpoint to receive webhook notifications from
 the WhatsApp Business API, extract URLs from messages, and forward them to the
-ingestion orchestrator.
+ingestion orchestrator. It includes robust error handling, retry mechanisms,
+and circuit breaker patterns for improved reliability.
 """
 
 import re
-from typing import List, Optional
+import time
+from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse
+from functools import wraps
 
-from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field, ConfigDict
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+import aiohttp
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
 from newsletter_generator.ingestion.orchestrator import ingest_url
 from newsletter_generator.storage import storage_manager
+from newsletter_generator.whatsapp.webhook_errors import (
+    ValidationError,
+    ProcessingError,
+    TransientError,
+    NetworkError,
+    CircuitBreakerError,
+)
 
 logger = get_logger("whatsapp.webhook")
 
 app = FastAPI(title="Newsletter Generator WhatsApp Webhook")
+
+
+class CircuitBreaker:
+    """Simple circuit breaker implementation."""
+    
+    def __init__(self, failure_threshold: int = 5, reset_timeout: int = 60):
+        """Initialize the circuit breaker.
+        
+        Args:
+            failure_threshold: Number of failures before opening the circuit.
+            reset_timeout: Time in seconds before trying to close the circuit again.
+        """
+        self.failure_count = 0
+        self.failure_threshold = failure_threshold
+        self.reset_timeout = reset_timeout
+        self.last_failure_time = 0
+        self.state = "closed"  # closed, open, half-open
+    
+    def record_failure(self):
+        """Record a failure and potentially open the circuit."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.failure_threshold:
+            self.state = "open"
+            logger.warning("Circuit breaker opened due to multiple failures")
+    
+    def record_success(self):
+        """Record a success and potentially close the circuit."""
+        if self.state == "half-open":
+            self.state = "closed"
+            self.failure_count = 0
+            logger.info("Circuit breaker closed after successful operation")
+    
+    def can_execute(self) -> bool:
+        """Check if the operation can be executed.
+        
+        Returns:
+            True if the operation can be executed, False otherwise.
+        """
+        if self.state == "closed":
+            return True
+        
+        if self.state == "open":
+            if time.time() - self.last_failure_time > self.reset_timeout:
+                self.state = "half-open"
+                logger.info("Circuit breaker transitioned to half-open state")
+                return True
+            return False
+        
+        return True
+
+
+ingestion_circuit_breaker = CircuitBreaker()
+
+
+def circuit_breaker_decorator(func):
+    """Decorator that applies circuit breaker pattern to a function.
+    
+    Args:
+        func: The function to decorate.
+        
+    Returns:
+        The decorated function.
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not ingestion_circuit_breaker.can_execute():
+            raise CircuitBreakerError("Circuit breaker is open")
+        
+        try:
+            result = await func(*args, **kwargs)
+            ingestion_circuit_breaker.record_success()
+            return result
+        except TransientError:
+            ingestion_circuit_breaker.record_failure()
+            raise
+    
+    return wrapper
 
 
 class WhatsAppMessage(BaseModel):
@@ -110,8 +205,111 @@ async def verify_webhook(
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(TransientError),
+)
+@circuit_breaker_decorator
+async def process_url(url: str, message_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Process a URL extracted from a webhook.
+    
+    Args:
+        url: The URL to process.
+        message_metadata: Metadata about the message containing the URL.
+        
+    Returns:
+        A dictionary with processing results.
+        
+    Raises: 
+        TransientError: If there's a temporary error that might resolve with a retry.
+        ProcessingError: If there's an error processing the URL.
+    """
+    logger.info(f"Processing URL: {url}")
+    
+    try:
+        # Process the URL through the ingestion pipeline
+        content, metadata = await ingest_url(url)
+        
+        # Add additional metadata
+        metadata.update(message_metadata)
+        
+        # Store the content in the storage manager
+        content_id = storage_manager.store_content(content, metadata)
+        
+        logger.info(f"Successfully processed and stored URL: {url} with content_id: {content_id}")
+        
+        return {
+            "url": url,
+            "content_id": content_id,
+            "status": "success"
+        }
+    except aiohttp.ClientError as e:
+        logger.warning(f"Network error processing URL {url}: {e}")
+        raise NetworkError(f"Network error: {e}")
+    except ConnectionError as e:
+        logger.warning(f"Connection error processing URL {url}: {e}")
+        raise NetworkError(f"Connection error: {e}")
+    except Exception as e:
+        logger.error(f"Error processing URL {url}: {e}")
+        raise ProcessingError(f"Error processing URL: {e}")
+
+
+async def process_webhook(payload: Dict[str, Any]):
+    """Process a webhook payload.
+    
+    Args:
+        payload: The webhook payload to process.
+    """
+    processed_urls = []
+    errors = []
+    
+    try:
+        for entry in payload["entry"]:
+            if "changes" not in entry or not entry["changes"]:
+                continue
+                
+            for change in entry["changes"]:
+                if "value" not in change or "messages" not in change["value"]:
+                    continue
+                    
+                for message in change["value"]["messages"]:
+                    if message["type"] != "text" or "text" not in message:
+                        continue
+                        
+                    text = message["text"].get("body", "")
+                    sender = message.get("from", "unknown")
+                    message_id = message.get("id", "unknown")
+                    
+                    message_metadata = {
+                        "date_added": CONFIG.get_iso_timestamp(),
+                        "source": "whatsapp",
+                        "sender": sender,
+                        "message_id": message_id,
+                    }
+                    
+                    urls = extract_urls(text)
+                    
+                    if urls:
+                        logger.info(f"Extracted {len(urls)} URLs from message: {urls}")
+                        
+                        for url in urls:
+                            try:
+                                result = await process_url(url, message_metadata)
+                                processed_urls.append(result)
+                            except (TransientError, ProcessingError) as e:
+                                logger.error(f"Error processing URL {url}: {e}")
+                                errors.append({"url": url, "error": str(e)})
+                    else:
+                        logger.info("No URLs found in message")
+                        
+        logger.info(f"Processed {len(processed_urls)} URLs with {len(errors)} errors")
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+
+
 @app.post("/webhook")
-async def receive_webhook(request: Request):
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     """Receive webhook notifications from WhatsApp Business API.
 
     This endpoint handles incoming messages from WhatsApp, extracts URLs,
@@ -119,6 +317,7 @@ async def receive_webhook(request: Request):
 
     Args:
         request: The FastAPI request object containing the webhook payload.
+        background_tasks: FastAPI BackgroundTasks for processing webhooks in the background.
 
     Returns:
         A success response.
@@ -127,7 +326,10 @@ async def receive_webhook(request: Request):
         payload = await request.json()
         logger.debug(f"Received webhook payload: {payload}")
 
-        if "object" not in payload or payload["object"] != "whatsapp_business_account":
+        if "object" not in payload:
+            raise ValidationError("Missing 'object' in webhook payload")
+            
+        if payload["object"] != "whatsapp_business_account":
             logger.info("Received non-message webhook notification")
             return {"status": "success"}
 
@@ -135,62 +337,16 @@ async def receive_webhook(request: Request):
             logger.warning("No entries in webhook payload")
             return {"status": "success"}
 
-        processed_urls = []
-
-        for entry in payload["entry"]:
-            if "changes" not in entry or not entry["changes"]:
-                continue
-
-            for change in entry["changes"]:
-                if "value" not in change or "messages" not in change["value"]:
-                    continue
-
-                for message in change["value"]["messages"]:
-                    if message["type"] != "text" or "text" not in message:
-                        continue
-
-                    text = message["text"].get("body", "")
-                    sender = message.get("from", "unknown")
-                    message_id = message.get("id", "unknown")
-
-                    urls = extract_urls(text)
-
-                    if urls:
-                        logger.info(f"Extracted {len(urls)} URLs from message: {urls}")
-
-                        for url in urls:
-                            logger.info(f"Processing URL: {url}")
-                            try:
-                                # Process the URL through the ingestion pipeline
-                                content, metadata = await ingest_url(url)
-
-                                # Add additional metadata
-                                metadata.update(
-                                    {
-                                        "date_added": CONFIG.get_iso_timestamp(),
-                                        "source": "whatsapp",
-                                        "sender": sender,
-                                        "message_id": message_id,
-                                    }
-                                )
-
-                                # Store the content in the storage manager
-                                content_id = storage_manager.store_content(content, metadata)
-
-                                logger.info(
-                                    f"Successfully processed and stored URL: {url} with content_id: {content_id}"
-                                )
-                                processed_urls.append(url)
-                            except Exception as e:
-                                logger.error(f"Error processing URL {url}: {e}")
-                    else:
-                        logger.info("No URLs found in message")
-
+        # Process the webhook in the background
+        background_tasks.add_task(process_webhook, payload)
+        
         return {
             "status": "success",
-            "processed_urls": processed_urls,
-            "total_processed": len(processed_urls),
+            "message": "Webhook received and being processed"
         }
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
         return {"status": "error", "message": str(e)}
@@ -207,6 +363,7 @@ def run_webhook_server():
     webhook_path = CONFIG.get("WEBHOOK_PATH", "/webhook")
 
     logger.info(f"Starting webhook server on port {port} with path {webhook_path}")
+    logger.info("Webhook server configured with robust error handling and circuit breaker")
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 

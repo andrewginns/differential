@@ -9,6 +9,15 @@ from newsletter_generator.whatsapp.webhook_receiver import (
     app,
     is_valid_url,
     extract_urls,
+    process_url,
+    process_webhook,
+    circuit_breaker_decorator,
+)
+from newsletter_generator.whatsapp.webhook_errors import (
+    ProcessingError,
+    TransientError,
+    NetworkError,
+    CircuitBreakerError,
 )
 
 
@@ -66,6 +75,186 @@ class TestURLFunctions:
         text = "Visit https://example.com. This is not a URL: example. But www.example.org is."
         expected_urls = ["https://example.com", "https://www.example.org"]
         assert sorted(extract_urls(text)) == sorted(expected_urls)
+
+
+class TestProcessFunctions:
+    """Test cases for URL processing functions."""
+    
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.ingestion_circuit_breaker")
+    async def test_circuit_breaker_decorator(self, mock_circuit_breaker):
+        """Test that the circuit breaker decorator works correctly."""
+        mock_circuit_breaker.can_execute.return_value = True
+        
+        @circuit_breaker_decorator
+        async def test_func():
+            return "success"
+        
+        result = await test_func()
+        assert result == "success"
+        mock_circuit_breaker.can_execute.assert_called_once()
+        mock_circuit_breaker.record_success.assert_called_once()
+        
+        mock_circuit_breaker.reset_mock()
+        
+        mock_circuit_breaker.can_execute.return_value = False
+        
+        with pytest.raises(CircuitBreakerError, match="Circuit breaker is open"):
+            await test_func()
+        
+        mock_circuit_breaker.can_execute.assert_called_once()
+        mock_circuit_breaker.record_success.assert_not_called()
+        
+        mock_circuit_breaker.reset_mock()
+        
+        mock_circuit_breaker.can_execute.return_value = True
+        
+        @circuit_breaker_decorator
+        async def error_func():
+            raise TransientError("Temporary error")
+        
+        with pytest.raises(TransientError, match="Temporary error"):
+            await error_func()
+        
+        mock_circuit_breaker.can_execute.assert_called_once()
+        mock_circuit_breaker.record_failure.assert_called_once()
+        mock_circuit_breaker.record_success.assert_not_called()
+    
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.ingest_url")
+    @patch("newsletter_generator.whatsapp.webhook_receiver.storage_manager.store_content")
+    async def test_process_url_success(self, mock_store_content, mock_ingest_url):
+        """Test that process_url correctly processes a URL."""
+        mock_ingest_url.return_value = ("content", {"metadata": "value"})
+        mock_store_content.return_value = "content_id_123"
+
+        message_metadata = {
+            "date_added": "2023-01-01T00:00:00Z",
+            "source": "whatsapp",
+            "sender": "1234567890",
+            "message_id": "wamid.123456789",
+        }
+
+        result = await process_url("https://example.com", message_metadata)
+
+        assert result["url"] == "https://example.com"
+        assert result["content_id"] == "content_id_123"
+        assert result["status"] == "success"
+
+        mock_ingest_url.assert_called_once_with("https://example.com")
+        mock_store_content.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.ingest_url")
+    async def test_process_url_network_error(self, mock_ingest_url):
+        """Test that process_url handles network errors correctly."""
+        mock_ingest_url.side_effect = ConnectionError("Connection error")
+
+        message_metadata = {
+            "date_added": "2023-01-01T00:00:00Z",
+            "source": "whatsapp",
+            "sender": "1234567890",
+            "message_id": "wamid.123456789",
+        }
+
+        from tenacity import RetryError
+        
+        with pytest.raises(RetryError) as excinfo:
+            await process_url("https://example.com", message_metadata)
+        
+        assert isinstance(excinfo.value.last_attempt.exception(), NetworkError)
+        assert "Connection error" in str(excinfo.value.last_attempt.exception())
+
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.ingest_url")
+    async def test_process_url_processing_error(self, mock_ingest_url):
+        """Test that process_url handles processing errors correctly."""
+        mock_ingest_url.side_effect = ValueError("Processing error")
+
+        message_metadata = {
+            "date_added": "2023-01-01T00:00:00Z",
+            "source": "whatsapp",
+            "sender": "1234567890",
+            "message_id": "wamid.123456789",
+        }
+
+        with pytest.raises(ProcessingError, match="Error processing URL"):
+            await process_url("https://example.com", message_metadata)
+
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.process_url")
+    async def test_process_webhook(self, mock_process_url):
+        """Test that process_webhook correctly processes a webhook payload."""
+        mock_process_url.return_value = {
+            "url": "https://example.com",
+            "content_id": "content_id_123",
+            "status": "success",
+        }
+
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "id": "123456789",
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "id": "wamid.123456789",
+                                        "type": "text",
+                                        "text": {"body": "Check out https://example.com"},
+                                        "from": "1234567890",
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        await process_webhook(payload)
+
+        mock_process_url.assert_called_once()
+        call_args = mock_process_url.call_args[0]
+        assert call_args[0] == "https://example.com"
+        assert call_args[1]["source"] == "whatsapp"
+        assert call_args[1]["sender"] == "1234567890"
+        assert call_args[1]["message_id"] == "wamid.123456789"
+
+    @pytest.mark.asyncio
+    @patch("newsletter_generator.whatsapp.webhook_receiver.process_url")
+    async def test_process_webhook_with_error(self, mock_process_url):
+        """Test that process_webhook handles errors correctly."""
+        mock_process_url.side_effect = ProcessingError("Processing error")
+
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "id": "123456789",
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "id": "wamid.123456789",
+                                        "type": "text",
+                                        "text": {"body": "Check out https://example.com"},
+                                        "from": "1234567890",
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+
+        await process_webhook(payload)
+
+        mock_process_url.assert_called_once()
 
 
 class TestWebhookEndpoints:
@@ -139,8 +328,7 @@ class TestWebhookEndpoints:
         assert response.status_code == 200
         response_json = response.json()
         assert response_json["status"] == "success"
-        assert "processed_urls" in response_json
-        assert "total_processed" in response_json
+        assert "message" in response_json
 
         mock_logger.info.assert_any_call("Extracted 1 URLs from message: ['https://example.com']")
         mock_logger.info.assert_any_call("Processing URL: https://example.com")
@@ -175,9 +363,7 @@ class TestWebhookEndpoints:
         assert response.status_code == 200
         response_json = response.json()
         assert response_json["status"] == "success"
-        assert "processed_urls" in response_json
-        assert "total_processed" in response_json
-        assert response_json["total_processed"] == 0
+        assert "message" in response_json
 
         mock_logger.info.assert_any_call("No URLs found in message")
 
@@ -221,8 +407,7 @@ class TestWebhookEndpoints:
         assert response.status_code == 200
         response_json = response.json()
         assert response_json["status"] == "success"
-        assert "processed_urls" in response_json
-        assert "total_processed" in response_json
+        assert "message" in response_json
 
 
 if __name__ == "__main__":
