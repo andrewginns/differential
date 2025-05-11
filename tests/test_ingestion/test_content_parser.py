@@ -46,7 +46,7 @@ class TestHTMLContentParser:
         mock_extract.assert_called_once_with(
             "<h1>Test HTML</h1><p>This is a test.</p>",
             output_format="markdown",
-            include_links=True,
+            include_links=False,
             include_images=True,
             include_tables=True,
         )
@@ -88,47 +88,44 @@ class TestPDFContentParser:
     """Test cases for the PDFContentParser class."""
 
     @patch("newsletter_generator.ingestion.content_parser.fitz.open")
-    def test_parse_with_text(self, mock_fitz_open):
+    @patch("newsletter_generator.ingestion.content_parser.pymupdf4llm.to_markdown")
+    def test_parse_with_text(self, mock_to_markdown, mock_fitz_open):
         """Test parsing PDF content with text."""
         mock_doc = MagicMock()
-        mock_page1 = MagicMock()
-        mock_page2 = MagicMock()
-
-        mock_page1.get_text.return_value = "Page 1 text"
-        mock_page2.get_text.return_value = "Page 2 text"
-
-        mock_doc.__iter__.return_value = [mock_page1, mock_page2]
         mock_fitz_open.return_value = mock_doc
+
+        # Mock the pymupdf4llm.to_markdown function to return markdown
+        mock_to_markdown.return_value = (
+            "# Test Content\n\nThis is page 1 text\n\nThis is page 2 text"
+        )
 
         parser = PDFContentParser()
         result = parser.parse(b"PDF content")
 
         assert "# PDF Document" in result
-        assert "Page 1 text" in result
-        assert "Page 2 text" in result
+        assert "# Test Content" in result
+        assert "This is page 1 text" in result
+        assert "This is page 2 text" in result
 
         mock_fitz_open.assert_called_once_with(stream=b"PDF content", filetype="pdf")
-        mock_doc.close.assert_called_once()
 
     @patch("newsletter_generator.ingestion.content_parser.fitz.open")
-    def test_parse_with_no_text(self, mock_fitz_open):
+    @patch("newsletter_generator.ingestion.content_parser.pymupdf4llm.to_markdown")
+    def test_parse_with_no_text(self, mock_to_markdown, mock_fitz_open):
         """Test parsing PDF content with no text."""
         mock_doc = MagicMock()
-        mock_page = MagicMock()
-
-        mock_page.get_text.return_value = ""  # Empty text
-
-        mock_doc.__iter__.return_value = [mock_page]
         mock_fitz_open.return_value = mock_doc
+
+        # Mock empty response
+        mock_to_markdown.return_value = ""
 
         parser = PDFContentParser()
         result = parser.parse(b"PDF content")
 
         assert "# PDF Document" in result
-        assert "*No text content could be extracted*" in result
+        assert result.strip() == "# PDF Document"
 
         mock_fitz_open.assert_called_once_with(stream=b"PDF content", filetype="pdf")
-        mock_doc.close.assert_called_once()
 
     @patch("newsletter_generator.ingestion.content_parser.fitz.open")
     def test_parse_with_exception(self, mock_fitz_open):
@@ -139,6 +136,121 @@ class TestPDFContentParser:
 
         with pytest.raises(Exception, match="Test exception"):
             parser.parse(b"PDF content")
+
+        mock_fitz_open.assert_called_once_with(stream=b"PDF content", filetype="pdf")
+
+    def test_remove_references_section_markdown_heading(self):
+        """Test removing references section with Markdown heading format."""
+        parser = PDFContentParser()
+        text = "# Introduction\n\nSome content.\n\n# Results\n\nMore content.\n\n# References\n\nReference 1\nReference 2\n\n# Appendix\n\nAppendix content."
+
+        # Print the exact string for debugging
+        print(f"Original text: {repr(text)}")
+
+        result = parser._remove_references_section(text)
+
+        # Print the result for debugging
+        print(f"Result text: {repr(result)}")
+
+        assert "# Introduction" in result
+        assert "# Results" in result
+        assert "# References" not in result
+        assert "Reference 1" not in result
+        assert "# Appendix" not in result
+        assert "Appendix content" not in result
+
+    def test_remove_references_section_plain_text(self):
+        """Test removing references section with plain text format."""
+        parser = PDFContentParser()
+        text = "Introduction\n\nSome content.\n\nResults\n\nMore content.\n\nReferences\n\nReference 1\nReference 2\n\nAppendix\n\nAppendix content."
+
+        result = parser._remove_references_section(text)
+
+        assert "Introduction" in result
+        assert "Results" in result
+        assert "References" not in result
+        assert "Reference 1" not in result
+        assert "Appendix" not in result
+
+    def test_remove_references_section_bold_format(self):
+        """Test removing references section with bold format."""
+        parser = PDFContentParser()
+        text = "# Introduction\n\nSome content.\n\n# Results\n\nMore content.\n\n**References**\n\nReference 1\nReference 2\n\n# Appendix\n\nAppendix content."
+
+        result = parser._remove_references_section(text)
+
+        assert "# Introduction" in result
+        assert "# Results" in result
+        assert "**References**" not in result
+        assert "Reference 1" not in result
+        assert "# Appendix" not in result
+
+    def test_remove_references_section_numbered(self):
+        """Test removing references section with numbered format."""
+        parser = PDFContentParser()
+        text = "1. Introduction\n\nSome content.\n\n2. Results\n\nMore content.\n\n3. References\n\nReference 1\nReference 2\n\n4. Appendix\n\nAppendix content."
+
+        result = parser._remove_references_section(text)
+
+        assert "1. Introduction" in result
+        assert "2. Results" in result
+        assert "3. References" not in result
+        assert "Reference 1" not in result
+        assert "4. Appendix" not in result
+
+    def test_remove_references_section_with_singular_form(self):
+        """Test removing reference section (singular form)."""
+        parser = PDFContentParser()
+        text = "# Introduction\n\nSome content.\n\n# Results\n\nMore content.\n\n# Reference\n\nReference 1\n\n# Appendix\n\nAppendix content."
+
+        result = parser._remove_references_section(text)
+
+        assert "# Introduction" in result
+        assert "# Results" in result
+        assert "# Reference" not in result
+        assert "Reference 1" not in result
+        assert "# Appendix" not in result
+
+    def test_references_as_part_of_word(self):
+        """Test that words containing 'reference' as part of them aren't matched."""
+        parser = PDFContentParser()
+        text = "# Introduction\n\nSome content with dereference.\n\n# Results\n\nThe prereference data shows...\n\n# Conclusion\n\nFinal thoughts."
+
+        result = parser._remove_references_section(text)
+
+        # Should remain unchanged
+        assert result == text
+
+    def test_no_references_section(self):
+        """Test with no references section."""
+        parser = PDFContentParser()
+        text = "# Introduction\n\nSome content.\n\n# Results\n\nMore content.\n\n# Conclusion\n\nFinal thoughts."
+
+        result = parser._remove_references_section(text)
+
+        # Should remain unchanged
+        assert result == text
+
+    @patch("newsletter_generator.ingestion.content_parser.fitz.open")
+    @patch("newsletter_generator.ingestion.content_parser.pymupdf4llm.to_markdown")
+    def test_parse_with_references_removal(self, mock_to_markdown, mock_fitz_open):
+        """Test that parse method calls the references section removal."""
+        mock_doc = MagicMock()
+        mock_fitz_open.return_value = mock_doc
+
+        # Simulate PDF content with references section
+        mock_to_markdown.return_value = (
+            "# Content\n\nSome text\n\n# References\n\nReference 1\nReference 2"
+        )
+
+        parser = PDFContentParser()
+        result = parser.parse(b"PDF content")
+
+        assert "# PDF Document" in result
+        assert "# Content" in result
+        assert "Some text" in result
+        assert "# References" not in result
+        assert "Reference 1" not in result
 
         mock_fitz_open.assert_called_once_with(stream=b"PDF content", filetype="pdf")
 

@@ -9,6 +9,7 @@ This module provides classes for parsing content from different sources:
 from typing import Dict, Any
 
 import fitz  # PyMuPDF
+import pymupdf4llm
 import trafilatura
 import re
 
@@ -57,7 +58,7 @@ class HTMLContentParser:
             extracted_text = trafilatura.extract(
                 html,
                 output_format="markdown",
-                include_links=True,
+                include_links=False,
                 include_images=True,
                 include_tables=True,
             )
@@ -83,6 +84,57 @@ class PDFContentParser:
         """Initialise the PDF content parser."""
         pass
 
+    def _remove_references_section(self, markdown_text: str) -> str:
+        """Remove references section and all content after it.
+
+        Args:
+            markdown_text: The markdown text to process
+
+        Returns:
+            Processed markdown text with references section removed
+        """
+        # Various patterns to match reference sections with exact matches
+        # for common references section formats
+        patterns = [
+            # Markdown headings
+            r"(?m)^# References$",  # Level 1 heading
+            r"(?m)^## References$",  # Level 2 heading
+            r"(?m)^### References$",  # Level 3 heading
+            r"(?m)^# Reference$",  # Singular form
+            r"(?m)^## Reference$",  # Level 2 singular
+            r"(?m)^### Reference$",  # Level 3 singular
+            # Plain text
+            r"(?m)^References$",  # Plain text on its own line
+            r"(?m)^Reference$",  # Singular form
+            # Bold formatting
+            r"(?m)^\*\*References\*\*$",  # Bold format
+            r"(?m)^\*\*Reference\*\*$",  # Bold singular
+            r"(?m)^__References__$",  # Alternate bold
+            r"(?m)^__Reference__$",  # Alternate bold singular
+            # Numbered sections
+            r"(?m)^\d+\.\s*References$",  # e.g., "5. References"
+            r"(?m)^\d+\.\s*Reference$",  # Singular form
+        ]
+
+        # Find the earliest match of any pattern
+        min_index = len(markdown_text)
+        for pattern in patterns:
+            matches = list(re.finditer(pattern, markdown_text))
+            if matches:
+                for match in matches:
+                    logger.debug(
+                        f"References section found: '{match.group()}' at position {match.start()}"
+                    )
+                    min_index = min(min_index, match.start())
+
+        # If we found a reference section, return text up to that point
+        if min_index < len(markdown_text):
+            logger.info(f"References section found and removed at position {min_index}")
+            return markdown_text[:min_index].strip()
+
+        logger.debug("No references section found")
+        return markdown_text
+
     def parse(self, content: bytes) -> str:
         """Parse PDF content.
 
@@ -99,22 +151,12 @@ class PDFContentParser:
 
         try:
             doc = fitz.open(stream=content, filetype="pdf")
-
-            text_parts = []
-            for page_num, page in enumerate(doc):
-                text = page.get_text()
-                if text.strip():
-                    text_parts.append(text)
-
-            doc.close()
-
-            if not text_parts:
-                logger.warning("No text extracted from PDF")
-                return "# PDF Document\n\n*No text content could be extracted*"
-
-            full_text = "\n\n".join(text_parts)
-
-            markdown = f"# PDF Document\n\n{full_text}"
+            # Extract Markdown using LLM-centric approach
+            full_text = pymupdf4llm.to_markdown(doc)
+            # Remove references section and everything after it
+            processed_text = self._remove_references_section(full_text)
+            # Format as Markdown with title
+            markdown = f"# PDF Document\n\n{processed_text}"
 
             return markdown
         except Exception as e:
