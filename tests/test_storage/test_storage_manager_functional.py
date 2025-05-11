@@ -3,6 +3,7 @@
 import os
 import pytest
 import yaml
+import shutil
 from unittest.mock import patch
 
 from newsletter_generator.storage.storage_manager import (
@@ -17,6 +18,16 @@ def storage_manager(tmp_path):
     """Create a storage manager with a temporary directory for testing."""
     manager = StorageManager(data_dir=str(tmp_path))
     return manager
+
+
+@pytest.fixture(autouse=True)
+def cleanup_real_data_dir():
+    """Cleanup any test data created in the real data directory."""
+    yield
+    # Clean up after all tests
+    real_test_data_dir = os.path.join("data", "te", "test-content-id")
+    if os.path.exists(real_test_data_dir):
+        shutil.rmtree(real_test_data_dir)
 
 
 def create_test_content(storage_manager, content_id, content, metadata, date_added=None):
