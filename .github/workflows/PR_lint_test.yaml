@@ -1,0 +1,17 @@
+name: Run lint and tests
+on: 
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4.1.1
+    - uses: actions/setup-python@v5.0.0
+      with:
+        python-version: '3.10.13'
+    - run: pip install uv
+    - run: uv sync
+    - run: make lint
+    - run: make test
