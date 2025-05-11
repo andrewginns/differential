@@ -36,3 +36,5 @@ data/*
 !data/.gitkeep
 .env
 *.log
+newsletter_cache/*
+newsletters/*
