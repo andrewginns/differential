@@ -13,15 +13,6 @@ server:
 newsletter:
 	uv run -m newsletter_generator.newsletter
 
-registry-cleanup:
-	uv run -m newsletter_generator.utils.registry_manager clean
-
-registry-validate:
-	uv run -m newsletter_generator.utils.registry_manager validate
-
-registry-build:
-	uv run -m newsletter_generator.utils.registry_manager build
-
 test:
 	uv run pytest
 

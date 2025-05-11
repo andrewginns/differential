@@ -3,7 +3,6 @@
 import os
 import pytest
 import datetime
-import yaml
 from unittest.mock import patch, mock_open, MagicMock
 
 from newsletter_generator.storage.storage_manager import (
@@ -13,7 +12,6 @@ from newsletter_generator.storage.storage_manager import (
     update_metadata,
     find_files_by_status,
     cleanup_old_files,
-    list_content,
 )
 
 
@@ -82,7 +80,6 @@ class TestStorageManager:
             patch("builtins.open", mock_open()) as mock_file,
             patch("newsletter_generator.storage.storage_manager.datetime") as mock_datetime,
             patch.object(storage_manager, "_generate_file_path") as mock_generate_path,
-            patch.object(storage_manager, "_update_content_registry") as mock_update_registry,
         ):
             mock_dt = MagicMock()
             mock_dt.isoformat.return_value = "2025-05-01T00:00:00"
@@ -90,18 +87,16 @@ class TestStorageManager:
             mock_datetime.timedelta = datetime.timedelta
 
             mock_generate_path.return_value = "test_data/2025-05-01/html_1234567890.md"
-            
+
             with patch("uuid.uuid4") as mock_uuid:
                 mock_uuid.return_value = "test-content-id"
                 content_id = storage_manager.store_content(content, metadata)
 
                 assert isinstance(content_id, str)
                 assert content_id == "test-content-id"
-                
+
                 handle = mock_file()
                 handle.write.assert_any_call(content)
-                
-                mock_update_registry.assert_called_once()
 
             handle = mock_file()
             handle.write.assert_any_call("---\n")
@@ -141,13 +136,16 @@ title: Test Title
 
 This is a test."""
 
-        with patch("builtins.open", mock_open(read_data=file_content)), \
-             patch("os.path.exists") as mock_exists, \
-             patch("yaml.safe_load") as mock_yaml_load:
-            
+        with (
+            patch("builtins.open", mock_open(read_data=file_content)),
+            patch("os.path.exists") as mock_exists,
+            patch("os.listdir") as mock_listdir,
+            patch.object(storage_manager, "_get_content_path") as mock_get_path,
+        ):
             mock_exists.return_value = True
-            mock_yaml_load.return_value = {"test_content_id": "test_file.md"}
-            
+            mock_get_path.return_value = "test_data/te/test_content_id"
+            mock_listdir.return_value = ["html.md"]
+
             content = storage_manager.get_content("test_content_id")
 
             assert content == "This is a test."
@@ -156,13 +154,16 @@ This is a test."""
         """Test getting content with no front matter."""
         file_content = "# Test Content\n\nThis is a test."
 
-        with patch("builtins.open", mock_open(read_data=file_content)), \
-             patch("os.path.exists") as mock_exists, \
-             patch("yaml.safe_load") as mock_yaml_load:
-            
+        with (
+            patch("builtins.open", mock_open(read_data=file_content)),
+            patch("os.path.exists") as mock_exists,
+            patch("os.listdir") as mock_listdir,
+            patch.object(storage_manager, "_get_content_path") as mock_get_path,
+        ):
             mock_exists.return_value = True
-            mock_yaml_load.return_value = {"test_content_id": "test_file.md"}
-            
+            mock_get_path.return_value = "test_data/te/test_content_id"
+            mock_listdir.return_value = ["html.md"]
+
             content = storage_manager.get_content("test_content_id")
 
             assert content == file_content
@@ -179,7 +180,7 @@ This is a test."""
                     "url": "https://example.com",
                     "source_type": "html",
                     "title": "Test Title",
-                }
+                },
             )
 
             storage_manager.update_metadata(
@@ -348,19 +349,24 @@ class TestConvenienceFunctions:
 
     def test_update_metadata_function(self):
         """Test the update_metadata convenience function."""
-        with patch(
-            "newsletter_generator.storage.storage_manager.os.path.exists"
-        ) as mock_exists, patch(
-            "newsletter_generator.storage.storage_manager.open", 
-            mock_open(read_data=yaml.dump({"test_content_id": "test_file_path"}))
-        ), patch(
-            "newsletter_generator.storage.storage_manager._storage_manager.update_metadata"
-        ) as mock_update:
+        with (
+            patch(
+                "newsletter_generator.storage.storage_manager._storage_manager._get_content_path"
+            ) as mock_get_path,
+            patch("newsletter_generator.storage.storage_manager.os.path.exists") as mock_exists,
+            patch("newsletter_generator.storage.storage_manager.os.listdir") as mock_listdir,
+            patch(
+                "newsletter_generator.storage.storage_manager._storage_manager.update_metadata"
+            ) as mock_update,
+        ):
+            mock_get_path.return_value = "test_data/te/test_content_id"
             mock_exists.return_value = True
-            
+            mock_listdir.return_value = ["html.md"]
+
             update_metadata("test_content_id", {"status": "processed"})
 
-            mock_update.assert_called_once_with("test_file_path", {"status": "processed"})
+            expected_path = "test_data/te/test_content_id/html.md"
+            mock_update.assert_called_once_with(expected_path, {"status": "processed"})
 
     def test_find_files_by_status_function(self):
         """Test the find_files_by_status convenience function."""

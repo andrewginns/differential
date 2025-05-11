@@ -10,7 +10,7 @@ from typing import List, Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import CONFIG
@@ -24,6 +24,8 @@ app = FastAPI(title="Newsletter Generator WhatsApp Webhook")
 
 class WhatsAppMessage(BaseModel):
     """Model for WhatsApp message data."""
+
+    model_config = ConfigDict()
 
     message_id: str = Field(..., alias="id")
     text: Optional[str] = None

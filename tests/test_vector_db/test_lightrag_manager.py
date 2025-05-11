@@ -21,6 +21,10 @@ def lightrag_manager():
     with (
         patch("newsletter_generator.vector_db.lightrag_manager.OpenAI") as mock_openai,
         patch("newsletter_generator.vector_db.lightrag_manager.lightrag") as _,
+        patch(
+            "newsletter_generator.vector_db.lightrag_manager.get_openai_api_key",
+            return_value="mock-api-key",
+        ),
         patch.object(LightRAGManager, "_initialise_db") as mock_initialise_db,
     ):
         mock_client = MagicMock()
@@ -50,6 +54,10 @@ class TestLightRAGManager:
         with (
             patch("newsletter_generator.vector_db.lightrag_manager.OpenAI"),
             patch("newsletter_generator.vector_db.lightrag_manager.lightrag"),
+            patch(
+                "newsletter_generator.vector_db.lightrag_manager.get_openai_api_key",
+                return_value="mock-api-key",
+            ),
         ):
             # Create manager and verify it creates the directory
             _ = LightRAGManager(data_dir=test_dir)

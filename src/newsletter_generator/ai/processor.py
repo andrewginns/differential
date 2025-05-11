@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.models.gemini import GeminiModel
@@ -42,6 +42,8 @@ class ModelProvider(str, Enum):
 class CategoryOutput(BaseModel):
     """Pydantic model for categorisation output."""
 
+    model_config = ConfigDict()
+
     primary_category: str = Field(description="The primary category of the content")
     secondary_categories: List[str] = Field(
         description="Secondary categories if applicable", max_items=3
@@ -53,6 +55,8 @@ class CategoryOutput(BaseModel):
 class InsightsOutput(BaseModel):
     """Pydantic model for insights output."""
 
+    model_config = ConfigDict()
+
     insights: List[str] = Field(
         description="Key technical insights extracted from the content",
         min_items=3,
@@ -63,6 +67,8 @@ class InsightsOutput(BaseModel):
 class RelevanceOutput(BaseModel):
     """Pydantic model for relevance evaluation."""
 
+    model_config = ConfigDict()
+
     relevance_score: float = Field(
         description="Relevance score between 0.0 and 1.0", ge=0.0, le=1.0
     )
@@ -71,11 +77,15 @@ class RelevanceOutput(BaseModel):
 class IntroductionOutput(BaseModel):
     """Pydantic model for newsletter introduction output."""
 
+    model_config = ConfigDict()
+
     introduction: str = Field(description="The formatted newsletter introduction text")
 
 
 class SectionOutput(BaseModel):
     """Pydantic model for newsletter section output."""
+
+    model_config = ConfigDict()
 
     section: str = Field(description="The formatted newsletter section text in Markdown")
 
