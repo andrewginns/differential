@@ -3,7 +3,6 @@
 import os
 import pytest
 import datetime
-import yaml
 from unittest.mock import patch, mock_open, MagicMock
 
 from newsletter_generator.storage.storage_manager import (

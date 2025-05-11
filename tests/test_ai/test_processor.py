@@ -8,43 +8,39 @@ from newsletter_generator.ai.processor import (
     AIProcessor,
     ModelProvider,
     get_ai_processor,
-    categorise_content,
-    summarise_content,
-    generate_insights,
-    evaluate_relevance,
-    generate_newsletter_section,
 )
 
 
 @pytest.fixture
 def ai_processor():
     """Create an AI processor for testing."""
-    with patch("newsletter_generator.ai.processor.OpenAIModel") as mock_openai_model, \
-         patch("newsletter_generator.ai.processor.GeminiModel") as mock_gemini_model, \
-         patch("newsletter_generator.ai.processor.Agent") as mock_agent, \
-         patch.object(AIProcessor, "__init__", return_value=None):
-        
+    with (
+        patch("newsletter_generator.ai.processor.OpenAIModel") as mock_openai_model,
+        patch("newsletter_generator.ai.processor.GeminiModel") as mock_gemini_model,
+        patch("newsletter_generator.ai.processor.Agent") as mock_agent,  # noqa: F841
+        patch.object(AIProcessor, "__init__", return_value=None),
+    ):
         # Create processor with mocked initialization
         processor = AIProcessor()
-        
+
         processor.provider = ModelProvider.GEMINI
         processor.cache_base_dir = "newsletter_cache"
         processor.openai_model = mock_openai_model.return_value
         processor.gemini_model = mock_gemini_model.return_value
         processor.current_model = processor.gemini_model
-        
+
         processor.categorisation_agent = MagicMock()
         processor.summary_agent = MagicMock()
         processor.insights_agent = MagicMock()
         processor.relevance_agent = MagicMock()
-        
+
         processor._get_cache_key = MagicMock(return_value="test_cache_key")
         processor._get_cache_dir = MagicMock(return_value=Path("test_cache_dir"))
         processor._check_cache = MagicMock(return_value=None)
         processor._save_to_cache = MagicMock()
-        
+
         processor.generate_newsletter_section = MagicMock(return_value="Test newsletter section")
-        
+
         yield processor
 
 
@@ -53,10 +49,12 @@ class TestAIProcessor:
 
     def test_init(self):
         """Test initialising the AI processor."""
-        with patch("newsletter_generator.ai.processor.OpenAIModel") as mock_openai_model, \
-             patch("newsletter_generator.ai.processor.GeminiModel") as mock_gemini_model, \
-             patch("newsletter_generator.ai.processor.Agent") as mock_agent, \
-             patch.dict("os.environ", {"OPENAI_API_KEY": "test_key"}):
+        with (
+            patch("newsletter_generator.ai.processor.OpenAIModel") as mock_openai_model,
+            patch("newsletter_generator.ai.processor.GeminiModel") as mock_gemini_model,
+            patch("newsletter_generator.ai.processor.Agent") as mock_agent,  # noqa: F841
+            patch.dict("os.environ", {"OPENAI_API_KEY": "test_key"}),
+        ):
             processor = AIProcessor()
 
             mock_openai_model.assert_called_once_with("o4-mini")
@@ -67,25 +65,25 @@ class TestAIProcessor:
         """Test categorising content."""
         mock_result = MagicMock()
         mock_output = MagicMock()
-        
+
         mock_output.model_dump.return_value = {
             "primary_category": "Machine Learning",
             "secondary_categories": ["Artificial Intelligence", "Data Science"],
             "tags": ["neural networks", "deep learning", "tensorflow", "pytorch", "transformers"],
-            "confidence": 0.95
+            "confidence": 0.95,
         }
-        
+
         mock_result.output = mock_output
-        
+
         ai_processor.categorisation_agent.run_sync.return_value = mock_result
-        
+
         result = ai_processor.categorise_content("Test content about machine learning")
-        
+
         assert result["primary_category"] == "Machine Learning"
         assert "Artificial Intelligence" in result["secondary_categories"]
         assert "neural networks" in result["tags"]
         assert result["confidence"] == 0.95
-        
+
         ai_processor.categorisation_agent.run_sync.assert_called_once()
 
     def test_categorise_content_error(self, ai_processor):
@@ -99,13 +97,13 @@ class TestAIProcessor:
         """Test summarising content."""
         mock_result = MagicMock()
         mock_result.output = "This is a test summary of the content."
-        
+
         ai_processor.summary_agent.run_sync.return_value = mock_result
-        
+
         result = ai_processor.summarise_content("Test content to summarise", max_length=100)
-        
+
         assert result == "This is a test summary of the content."
-        
+
         ai_processor.summary_agent.run_sync.assert_called_once()
 
     def test_summarise_content_error(self, ai_processor):
@@ -119,22 +117,22 @@ class TestAIProcessor:
         """Test generating insights from content."""
         mock_result = MagicMock()
         mock_output = MagicMock()
-        
+
         mock_output.insights = [
             "Transformer models outperform traditional RNNs by 15% on language tasks.",
             "The new architecture reduces training time by 40% while maintaining accuracy.",
-            "Transfer learning techniques enable models to adapt to new domains with 70% less data."
+            "Transfer learning techniques enable models to adapt to new domains with 70% less data.",
         ]
-        
+
         mock_result.output = mock_output
-        
+
         ai_processor.insights_agent.run_sync.return_value = mock_result
-        
+
         result = ai_processor.generate_insights("Test content about machine learning")
-        
+
         assert len(result) == 3
         assert "Transformer models" in result[0]
-        
+
         ai_processor.insights_agent.run_sync.assert_called_once()
 
     def test_generate_insights_error(self, ai_processor):
@@ -148,58 +146,58 @@ class TestAIProcessor:
         """Test evaluating content relevance."""
         mock_result = MagicMock()
         mock_output = MagicMock()
-        
+
         mock_output.relevance_score = 0.85
-        
+
         mock_result.output = mock_output
-        
+
         ai_processor.relevance_agent.run_sync.return_value = mock_result
-        
+
         result = ai_processor.evaluate_relevance("Test content to evaluate")
-        
+
         assert result == 0.85
-        
+
         ai_processor.relevance_agent.run_sync.assert_called_once()
 
     def test_evaluate_relevance_with_text(self, ai_processor):
         """Test evaluating content relevance with text response."""
         mock_result = MagicMock()
         mock_output = MagicMock()
-        
+
         mock_output.relevance_score = 0.75
-        
+
         mock_result.output = mock_output
-        
+
         ai_processor.relevance_agent.run_sync.return_value = mock_result
-        
+
         result = ai_processor.evaluate_relevance("Test content to evaluate")
-        
+
         assert result == 0.75
-        
+
         ai_processor.relevance_agent.run_sync.assert_called_once()
 
     def test_evaluate_relevance_invalid_response(self, ai_processor):
         """Test evaluating content relevance with invalid response."""
         mock_result = MagicMock()
         mock_output = MagicMock()
-        
+
         # Set up an invalid relevance score (None) to trigger default value
         mock_output.relevance_score = None
-        
+
         mock_result.output = mock_output
-        
+
         ai_processor.relevance_agent.run_sync.return_value = mock_result
-        
+
         ai_processor._check_cache.return_value = None
-        
+
         original_evaluate = ai_processor.evaluate_relevance
         ai_processor.evaluate_relevance = MagicMock(return_value=0.5)
-        
+
         result = ai_processor.evaluate_relevance("Test content to evaluate")
-        
+
         # Verify the result uses the default value
         assert result == 0.5  # Default value
-        
+
         ai_processor.evaluate_relevance = original_evaluate
 
     def test_evaluate_relevance_error(self, ai_processor):
@@ -219,9 +217,9 @@ class TestAIProcessor:
         
         [Read more](https://example.com)
         """
-        
+
         ai_processor.generate_newsletter_section.return_value = expected_section
-        
+
         result = ai_processor.generate_newsletter_section(
             title="New ML Research",
             content="Test content about machine learning",
@@ -230,12 +228,12 @@ class TestAIProcessor:
             cache_id="test_id",
             force_refresh=True,
         )
-        
+
         # Verify the result contains the expected content
         assert "Recent research has shown significant improvements in model efficiency" in result
         assert "Point 1" in result
         assert "Point 2" in result
-        
+
         # Verify the method was called with the correct arguments
         ai_processor.generate_newsletter_section.assert_called_once_with(
             title="New ML Research",
@@ -279,9 +277,9 @@ class TestConvenienceFunctions:
 
         with patch(
             "newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor
-        ) as mock_get_processor:
+        ):
             from newsletter_generator.ai.processor import categorise_content
-            
+
             result = categorise_content("Test content")
 
             assert result == {"primary_category": "Test"}
@@ -296,17 +294,14 @@ class TestConvenienceFunctions:
 
         with patch(
             "newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor
-        ) as mock_get_processor:
+        ):
             from newsletter_generator.ai.processor import summarise_content
-            
+
             result = summarise_content("Test content", max_length=150)
 
             assert result == "Test summary"
             mock_processor.summarise_content.assert_called_once_with(
-                content="Test content", 
-                max_length=150, 
-                cache_id=None, 
-                force_refresh=False
+                content="Test content", max_length=150, cache_id=None, force_refresh=False
             )
 
     def test_generate_insights_function(self):
@@ -316,9 +311,9 @@ class TestConvenienceFunctions:
 
         with patch(
             "newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor
-        ) as mock_get_processor:
+        ):
             from newsletter_generator.ai.processor import generate_insights
-            
+
             result = generate_insights("Test content")
 
             assert result == ["Insight 1", "Insight 2"]
@@ -333,9 +328,9 @@ class TestConvenienceFunctions:
 
         with patch(
             "newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor
-        ) as mock_get_processor:
+        ):
             from newsletter_generator.ai.processor import evaluate_relevance
-            
+
             result = evaluate_relevance("Test content")
 
             assert result == 0.8
@@ -350,17 +345,21 @@ class TestConvenienceFunctions:
 
         with patch(
             "newsletter_generator.ai.processor.get_ai_processor", return_value=mock_processor
-        ) as mock_get_processor:
+        ):
             from newsletter_generator.ai.processor import generate_newsletter_section
-            
+
             result = generate_newsletter_section(
                 title="Test Title", content="Test content", category="Test Category", max_length=250
             )
 
             assert result == "# Test Section"
             mock_processor.generate_newsletter_section.assert_called_once_with(
-                "Test Title", "Test content", "Test Category", 250,
-                cache_id=None, force_refresh=False
+                "Test Title",
+                "Test content",
+                "Test Category",
+                250,
+                cache_id=None,
+                force_refresh=False,
             )
 
 

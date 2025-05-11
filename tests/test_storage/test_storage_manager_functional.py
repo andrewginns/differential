@@ -1,24 +1,14 @@
 """Functional tests for the storage manager with minimal mocking."""
 
 import os
-import time
 import pytest
-import datetime
 import yaml
-from pathlib import Path
 from unittest.mock import patch
 
 from newsletter_generator.storage.storage_manager import (
     StorageManager,
     store_content,
     get_content,
-    update_metadata,
-    find_files_by_status,
-    cleanup_old_files,
-)
-from newsletter_generator.utils.content_processing import (
-    get_url_hash,
-    generate_content_fingerprint,
 )
 
 
@@ -122,7 +112,7 @@ class TestStorageManagerFunctional:
 
         with patch("uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = "test-content-id"
-            content_id = storage_manager.store_content(content, metadata)
+            _ = storage_manager.store_content(content, metadata)
 
         content_file = tmp_path / "te" / "test-content-id" / "html.md"
 
