@@ -216,6 +216,16 @@ class StorageManager:
         # Update our indices
         self.url_hash_index[url_hash] = content_id
         self.fingerprint_index[content_fingerprint] = content_id
+        
+        # Run post-save hook if available
+        try:
+            from newsletter_generator.integration.hooks import storage_post_save_hook
+            storage_post_save_hook(content_id, metadata)
+        except ImportError:
+            # Integration hooks not available, skip
+            pass
+        except Exception as e:
+            logger.error(f"Error in post-save hook for content {content_id}: {e}")
 
         return content_id
 
@@ -393,6 +403,9 @@ class StorageManager:
         try:
             content, metadata = self.read_content(file_path)
 
+            # Store the original content_id before updating
+            content_id = metadata.get("content_id")
+            
             metadata.update(metadata_updates)
 
             with open(file_path, "w", encoding="utf-8") as f:
@@ -402,6 +415,17 @@ class StorageManager:
                 f.write(content)
 
             logger.info(f"Updated metadata in {file_path}")
+            
+            # Run post-update hook if available and we have a content_id
+            if content_id:
+                try:
+                    from newsletter_generator.integration.hooks import storage_post_update_hook
+                    storage_post_update_hook(content_id, metadata)
+                except ImportError:
+                    # Integration hooks not available, skip
+                    pass
+                except Exception as e:
+                    logger.error(f"Error in post-update hook for content {content_id}: {e}")
         except Exception as e:
             logger.error(f"Error updating metadata in {file_path}: {e}")
             raise
@@ -465,6 +489,25 @@ class StorageManager:
                         for filename in os.listdir(dir_path):
                             file_path = os.path.join(dir_path, filename)
                             try:
+                                # Get content ID before deleting
+                                try:
+                                    _, metadata = self.read_content(file_path)
+                                    content_id = metadata.get("content_id")
+                                    
+                                    # Run pre-delete hook if available
+                                    if content_id:
+                                        try:
+                                            from newsletter_generator.integration.hooks import storage_pre_delete_hook
+                                            storage_pre_delete_hook(content_id)
+                                        except ImportError:
+                                            # Integration hooks not available, skip
+                                            pass
+                                        except Exception as e:
+                                            logger.error(f"Error in pre-delete hook for content {content_id}: {e}")
+                                except Exception:
+                                    # If we can't read the file, just continue with deletion
+                                    pass
+                                
                                 os.remove(file_path)
                                 deleted_count += 1
                                 logger.debug(f"Deleted old file: {file_path}")
