@@ -9,8 +9,9 @@ The WhatsApp integration consists of:
 1. **Webhook Receiver**: FastAPI endpoint for receiving webhook notifications
 2. **URL Extraction**: Extracts URLs from incoming messages
 3. **URL Processing**: Processes URLs through the ingestion pipeline
-4. **Error Handling**: Structured error types and recovery mechanisms
-5. **Circuit Breaker**: Prevents cascading failures during outages
+4. **Message Acknowledgment**: Sends reactions to received messages
+5. **Error Handling**: Structured error types and recovery mechanisms
+6. **Circuit Breaker**: Prevents cascading failures during outages
 
 ```mermaid
 flowchart TD
@@ -19,6 +20,7 @@ flowchart TD
     URLExtractor -->|Process| URLProcessor[URL Processor]
     URLProcessor -->|Circuit Breaker| IngestionService[Ingestion Service]
     URLProcessor -->|Retry| URLProcessor
+    WebhookReceiver -->|Acknowledge| MessageReaction[Message Reaction]
     IngestionService -->|Store| StorageManager[Storage Manager]
     
     subgraph ErrorHandling[Error Handling System]
@@ -26,9 +28,11 @@ flowchart TD
         ProcessingError[Processing Error]
         TransientError[Transient Error]
         CircuitBreakerError[Circuit Breaker Error]
+        NetworkError[Network Error]
     end
     
     URLProcessor -.->|Handle| ErrorHandling
+    MessageReaction -.->|Handle| ErrorHandling
 ```
 
 ## Webhook Receiver
@@ -37,8 +41,29 @@ The webhook receiver is a FastAPI application that:
 
 1. Validates incoming webhook requests from Meta
 2. Extracts URLs from message content
-3. Processes URLs asynchronously
-4. Provides detailed logging and monitoring
+3. Sends acknowledgment reactions to received messages
+4. Processes URLs asynchronously using background tasks
+5. Provides detailed logging and monitoring
+
+## Message Acknowledgment
+
+The system acknowledges received messages by sending a reaction emoji:
+
+1. Each received message gets a checkmark (✅) reaction
+2. Reactions are sent asynchronously with retry mechanism
+3. Failures to send reactions are logged but don't block URL processing
+4. This provides immediate feedback to users that their message was received
+
+```python
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(NetworkError),
+)
+async def send_message_reaction(message_id: str, sender_phone: str, emoji: str = "✅"):
+    # Implementation that sends a reaction to the received message
+    # ...
+```
 
 ## Error Handling System
 
@@ -118,6 +143,29 @@ The circuit breaker:
 3. Automatically transitions to half-open after a timeout
 4. Closes after successful operations in half-open state
 
+## URL Extraction
+
+The system uses regex pattern matching to extract URLs from messages:
+
+1. Matches common URL formats (http://, https://, www.)
+2. Validates URLs for proper structure
+3. Handles URLs with trailing punctuation
+4. Adds https:// to URLs starting with www.
+
+## API Endpoints
+
+The webhook system exposes two main endpoints:
+
+1. **GET /webhook**: Handles the initial verification handshake from Meta
+   - Validates the verify token
+   - Returns the challenge string for successful verification
+
+2. **POST /webhook**: Processes incoming webhook notifications
+   - Extracts messages from webhook payload
+   - Acknowledges messages with reactions
+   - Processes URLs in the background
+   - Returns success response immediately for asynchronous processing
+
 ## Transaction-like Operations
 
 The webhook processing implements transaction-like semantics:
@@ -178,6 +226,10 @@ async def my_function():
 The webhook receiver can be configured through environment variables:
 
 - `WHATSAPP_VERIFY_TOKEN`: Token for webhook verification
+- `WHATSAPP_PHONE_NUMBER_ID`: ID of the WhatsApp phone number for your business account
+- `WHATSAPP_API_TOKEN`: Authentication token for the WhatsApp Business API
+- `WHATSAPP_API_VERSION`: API version to use (default: "v18.0")
 - `WEBHOOK_PORT`: Port for the webhook server (default: 8000)
+- `WEBHOOK_PATH`: Path for webhook endpoint (default: "/webhook")
 - `CIRCUIT_BREAKER_THRESHOLD`: Failure threshold (default: 5)
 - `CIRCUIT_BREAKER_TIMEOUT`: Reset timeout in seconds (default: 60)
