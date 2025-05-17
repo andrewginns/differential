@@ -132,3 +132,85 @@ processor = get_ai_processor(
     output_dir="custom_newsletter_output"
 )
 ```
+
+# AI Module
+
+This module contains components for integrating with Large Language Models (LLMs) for processing newsletter content.
+
+## Components
+
+- `processor.py`: The main interface for interacting with LLMs, providing functions for categorisation, summarisation, and content generation.
+
+## Prompts Management
+
+The `prompts` package contains versioned prompt templates for different AI agents, organized by functionality. Each prompt type is maintained in its own directory with versioned implementations.
+
+### Directory Structure
+
+```
+prompts/
+├── __init__.py
+├── categorisation/
+│   ├── __init__.py
+│   ├── v1.py
+│   └── v2.py (when new versions are added)
+├── insights/
+├── introduction/
+├── relevance/ 
+├── section/
+├── summary/
+└── task/
+```
+
+### Versioning Strategy
+
+Each prompt category follows a consistent versioning approach:
+
+1. **Version-based Files**: Each version of a prompt is stored in its own Python file (e.g., `v1.py`, `v2.py`)
+2. **Consistent Interface**: All versions maintain the same interface - either exposing a `prompt` variable or a function like `get_prompt()`
+3. **Independent Evolution**: Versions evolve independently, allowing for experimentation without affecting production code
+4. **Clear Documentation**: Each version file includes docstrings explaining its purpose and any changes from previous versions
+
+### Importing Prompts
+
+Prompts are imported by specifying the exact version needed:
+
+```python
+# Import specific prompt versions
+from newsletter_generator.ai.prompts.categorisation import v1 as categorisation
+
+# Use in code
+agent = Agent(
+    model, 
+    system_prompt=categorisation.prompt
+)
+
+# For prompts that require customization
+from newsletter_generator.ai.prompts.section import v1 as section
+
+agent = Agent(
+    model,
+    system_prompt=section.get_prompt(max_length=300)
+)
+```
+
+### Benefits of Versioning
+
+This versioning approach provides several advantages:
+
+1. **Stability**: Production code can rely on specific prompt versions that are known to work well
+2. **Experimentation**: New prompt versions can be developed and tested without disrupting existing functionality
+3. **Evaluation**: Different prompt versions can be benchmarked against each other to measure improvements
+4. **History**: The evolution of prompts is preserved, documenting the refinement process
+5. **Rollback**: If a new prompt version performs poorly, the system can easily revert to a previous version
+
+### Creating New Prompt Versions
+
+To create a new version of a prompt:
+
+1. Create a new file (e.g., `v2.py`) in the appropriate subdirectory
+2. Implement the same interface as the previous version
+3. Document the changes and improvements in the file's docstring
+4. Import the new version where needed: `from newsletter_generator.ai.prompts.categorisation import v2 as categorisation`
+
+This structured approach to prompt management ensures that the system can evolve while maintaining reliability and providing clear documentation of prompt engineering decisions.
