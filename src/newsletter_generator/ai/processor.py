@@ -19,6 +19,14 @@ from newsletter_generator.utils.logging_utils import get_logger
 from newsletter_generator.utils.config import (
     CONFIG,
 )
+from newsletter_generator.ai.prompts import (
+    get_categorisation_prompt,
+    get_insights_prompt,
+    get_relevance_prompt,
+    get_summary_prompt,
+    get_introduction_prompt,
+    get_section_prompt,
+)
 import logfire
 
 # Configure Logfire
@@ -125,45 +133,14 @@ class AIProcessor:
             self.current_model,
             name="Categorisation Agent",
             output_type=CategoryOutput,
-            system_prompt="""
-            You are a technical content categorisation assistant. Your task is to analyse
-            technical content and categorise it into one of the following primary categories:
-            
-            - Frontend Development
-            - Backend Development
-            - DevOps
-            - Data Science
-            - Machine Learning
-            - Artificial Intelligence
-            - Cloud Computing
-            - Security
-            - Blockchain
-            - Mobile Development
-            - IoT
-            - Other
-            
-            Also provide up to 3 secondary categories if applicable, and up to 5 relevant tags.
-            Provide a confidence score between 0.0 and 1.0 for your categorisation.
-            """,
+            system_prompt=get_categorisation_prompt(),
         )
         self.categorisation_agent.instrument_all()
 
         self.summary_agent = Agent(
             self.current_model,
             name="Summary Agent",
-            system_prompt="""
-            You are a technical content summarisation assistant. Your task is to create
-            concise, informative summaries of technical content.
-            
-            Focus on:
-            1. Key technical concepts and contributions
-            2. Main features or methodologies described
-            3. Potential applications or implications
-            4. Technical advantages or innovations
-            
-            Keep your summary clear, accurate, and focused on the technical aspects.
-            Remove marketing language and focus on factual information.
-            """,
+            system_prompt=get_summary_prompt(),
         )
         self.summary_agent.instrument_all()
 
@@ -171,42 +148,14 @@ class AIProcessor:
             self.current_model,
             name="Insights Agent",
             output_type=InsightsOutput,
-            system_prompt="""
-            You are a technical insight extraction assistant. Your task is to identify
-            the most important technical insights from the content provided.
-            
-            Focus on:
-            1. Novel technical approaches or methodologies
-            2. Significant performance improvements or optimisations
-            3. Innovative solutions to technical challenges
-            4. Important technical trends or shifts
-            5. Key technical limitations or constraints identified
-            
-            Return a list of 3-5 concise, specific insights that would be valuable
-            to technical professionals. Each insight should be a single sentence
-            that captures a specific, actionable piece of information.
-            """,
+            system_prompt=get_insights_prompt(),
         )
 
         self.relevance_agent = Agent(
             self.current_model,
             name="Relevance Agent",
             output_type=RelevanceOutput,
-            system_prompt="""
-            You are a technical content relevance evaluator. Your task is to assess
-            how relevant and valuable the provided content would be to technical
-            professionals in a newsletter.
-            
-            Consider the following factors:
-            1. Technical depth and specificity
-            2. Novelty and innovation
-            3. Practical applicability
-            4. Technical accuracy
-            5. Educational value
-            
-            Return a relevance score between 0.0 (not relevant) and 1.0 (highly relevant)
-            representing your assessment of the content's relevance.
-            """,
+            system_prompt=get_relevance_prompt(),
         )
 
         logger.info(f"Initialised AI processor with provider: {provider}")
@@ -618,24 +567,7 @@ class AIProcessor:
                 self.current_model,
                 name="Section Creation Agent",
                 output_type=SectionOutput,
-                system_prompt=f"""
-                You are a technical newsletter section writer. Your task is to create
-                engaging, informative newsletter sections from technical content.
-                
-                Your section should include:
-                1. A brief, catchy introduction that highlights why this content is interesting
-                2. A concise summary of the key technical points
-                3. Any notable implications or applications
-                4. A brief conclusion or call to action
-                
-                Format your response in Markdown, with appropriate headings, bullet points,
-                and emphasis where needed. Make it engaging for technical professionals
-                while maintaining technical accuracy.
-                
-                Your section should be under {max_length} words.
-                
-                IMPORTANT: Return the section directly in the 'section' field without additional comments.
-                """,
+                system_prompt=get_section_prompt(max_length),
             )
 
             logger.info(
@@ -728,22 +660,7 @@ class AIProcessor:
                 self.current_model,
                 name="Introduction Agent",
                 output_type=IntroductionOutput,
-                system_prompt=f"""
-                You are a technical newsletter introduction writer. Your task is to create
-                engaging, informative introductions for technical newsletters.
-                
-                Your introduction should:
-                1. Welcome readers and set the tone for the newsletter
-                2. Highlight key themes or notable items from this week
-                3. Briefly mention the diversity of content available
-                4. Encourage readers to explore the different sections
-                
-                Keep your introduction concise, professional, and focused on technical content.
-                Write in a friendly but authoritative tone appropriate for a professional audience.
-                Your introduction should be under {max_length} words.
-                
-                IMPORTANT: Return a SINGLE introduction in the 'introduction' field, NOT multiple options.
-                """,
+                system_prompt=get_introduction_prompt(max_length),
             )
 
             # Create the prompt based on available content

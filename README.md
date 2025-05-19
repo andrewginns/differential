@@ -152,9 +152,31 @@ For more details on the WhatsApp integration, see the [WhatsApp Documentation](s
 
 You can customise the newsletter generation by modifying the following:
 
-- Content categorisation: Update LLM prompts in the `ai/processor.py` file
+- Content categorisation: Update LLM prompts using the centralised prompt registry system (see [AI Documentation](src/newsletter_generator/ai/AI.md))
 - Newsletter template: Modify the `assemble_newsletter` method in `newsletter/assembler.py`
 - Content sources: Currently supports web pages, PDFs, and YouTube videos
+
+### Prompt Version Selection
+
+The system uses a centralised prompt registry to manage different versions of prompts:
+
+```python
+# Import the registry functions
+from newsletter_generator.ai.prompts import (
+    set_prompt_version,
+    set_all_prompt_versions,
+    get_categorisation_prompt
+)
+
+# Set a specific prompt category to use v2
+set_prompt_version("categorisation", "v2")
+
+# Set all prompt categories to use v2
+set_all_prompt_versions("v2")
+
+# Get the current version of a prompt
+prompt = get_categorisation_prompt()
+```
 
 ## Troubleshooting
 
