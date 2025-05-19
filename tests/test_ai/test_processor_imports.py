@@ -9,7 +9,7 @@ class TestProcessorImports(unittest.TestCase):
     def test_import_processor(self):
         """Test that processor.py can be imported without errors."""
         try:
-            from newsletter_generator.ai.processor import get_ai_processor
+            from newsletter_generator.ai.processor import get_ai_processor # noqa: F401
             self.assertTrue(True, "Successfully imported processor")
         except ImportError as e:
             self.fail(f"Failed to import processor: {e}")

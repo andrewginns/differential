@@ -7,17 +7,6 @@ from newsletter_generator.ai.prompts.prompt_registry import (
     reset_to_defaults,
     get_prompt_module,
     get_categorisation_prompt,
-    get_insights_prompt,
-    get_relevance_prompt,
-    get_summary_prompt,
-    get_introduction_prompt,
-    get_section_prompt,
-    get_task_category_prompt,
-    get_task_summary_prompt,
-    get_task_insights_prompt,
-    get_task_relevance_prompt,
-    get_task_section_prompt,
-    get_task_introduction_prompt,
 )
 from newsletter_generator.ai.prompts.categorisation import v1 as categorisation_v1
 from newsletter_generator.ai.prompts.categorisation import v2 as categorisation_v2

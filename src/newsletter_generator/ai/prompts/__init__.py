@@ -19,7 +19,7 @@ For centralized version management (recommended):
     set_all_prompt_versions("v2")
 """
 
-from newsletter_generator.ai.prompts.prompt_registry import (
+from newsletter_generator.ai.prompts.prompt_registry import (  # noqa: F401
     set_prompt_version,
     set_all_prompt_versions,
     reset_to_defaults,
