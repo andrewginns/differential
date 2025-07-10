@@ -5,8 +5,7 @@ without running the actual webhook server.
 """
 
 import pytest
-from unittest.mock import patch, AsyncMock
-from typing import Dict, Any, List, Optional
+from unittest.mock import patch
 
 from newsletter_generator.whatsapp.webhook_receiver import (
     parse_command_args,

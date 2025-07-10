@@ -6,7 +6,6 @@ without running the actual webhook server.
 
 import pytest
 from unittest.mock import patch
-from typing import Dict, Any, List, Optional
 
 from newsletter_generator.whatsapp.webhook_receiver import (
     parse_command_args,

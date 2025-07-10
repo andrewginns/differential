@@ -10,10 +10,9 @@ It also supports slash commands for generating newsletters and other interaction
 
 import re
 import time
-import os
 import asyncio
 import datetime
-from typing import List, Optional, Dict, Any, Tuple, Union
+from typing import List, Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
 from functools import wraps
 
