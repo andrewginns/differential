@@ -15,47 +15,47 @@ from newsletter_generator.ai.prompts.categorisation import v2 as categorisation_
 def test_default_versions():
     """Test that default versions are set correctly."""
     reset_to_defaults()
-    
-    assert get_categorisation_prompt() == categorisation_v1.prompt
+
+    assert get_categorisation_prompt() == categorisation_v2.prompt
 
 
 def test_set_prompt_version():
     """Test setting the version for a specific prompt category."""
     reset_to_defaults()
-    
-    set_prompt_version("categorisation", "v2")
-    
-    assert get_categorisation_prompt() == categorisation_v2.prompt
-    
+
     set_prompt_version("categorisation", "v1")
-    
+
     assert get_categorisation_prompt() == categorisation_v1.prompt
+
+    set_prompt_version("categorisation", "v2")
+
+    assert get_categorisation_prompt() == categorisation_v2.prompt
 
 
 def test_set_all_prompt_versions():
     """Test setting all prompt categories to the same version."""
     reset_to_defaults()
-    
-    set_all_prompt_versions("v2")
-    
-    assert get_categorisation_prompt() == categorisation_v2.prompt
-    
+
+    set_all_prompt_versions("v1")
+
+    assert get_categorisation_prompt() == categorisation_v1.prompt
+
     reset_to_defaults()
 
 
 def test_get_prompt_module():
     """Test getting the prompt module for a specific category."""
     reset_to_defaults()
-    
+
     module = get_prompt_module("categorisation")
-    
-    assert module == categorisation_v1
-    
-    set_prompt_version("categorisation", "v2")
-    
-    module = get_prompt_module("categorisation")
-    
+
     assert module == categorisation_v2
+
+    set_prompt_version("categorisation", "v1")
+
+    module = get_prompt_module("categorisation")
+
+    assert module == categorisation_v1
 
 
 def test_invalid_category():
@@ -73,9 +73,9 @@ def test_invalid_version():
 def test_convenience_functions():
     """Test the convenience functions for getting prompts."""
     reset_to_defaults()
-    
-    set_all_prompt_versions("v2")
-    
-    assert get_categorisation_prompt() == categorisation_v2.prompt
-    
+
+    set_all_prompt_versions("v1")
+
+    assert get_categorisation_prompt() == categorisation_v1.prompt
+
     reset_to_defaults()

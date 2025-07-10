@@ -34,13 +34,13 @@ PromptCategory = Literal[
 PromptVersion = Literal["v1", "v2"]
 
 _default_versions: Dict[PromptCategory, PromptVersion] = {
-    "categorisation": "v1",
-    "insights": "v1",
-    "introduction": "v1",
-    "relevance": "v1",
-    "section": "v1",
-    "summary": "v1",
-    "task": "v1",
+    "categorisation": "v2",
+    "insights": "v2",
+    "introduction": "v2",
+    "relevance": "v2",
+    "section": "v2",
+    "summary": "v2",
+    "task": "v2",
 }
 
 _current_versions = _default_versions.copy()
@@ -88,7 +88,7 @@ def set_prompt_version(category: PromptCategory, version: PromptVersion) -> None
         raise ValueError(f"Unknown prompt category: {category}")
     if version not in _prompt_modules[category]:
         raise ValueError(f"Unknown version '{version}' for category '{category}'")
-    
+
     _current_versions[category] = version
 
 
@@ -212,6 +212,4 @@ def get_task_introduction_prompt(
     Returns:
         The formatted task prompt
     """
-    return get_prompt_module("task").introduction_prompt(
-        categories, total_items, content_summary
-    )
+    return get_prompt_module("task").introduction_prompt(categories, total_items, content_summary)

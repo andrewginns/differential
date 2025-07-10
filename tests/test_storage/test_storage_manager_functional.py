@@ -5,6 +5,7 @@ import pytest
 import yaml
 import shutil
 from unittest.mock import patch
+import uuid
 
 from newsletter_generator.storage.storage_manager import (
     StorageManager,
@@ -174,7 +175,7 @@ class TestConvenienceFunctionsFunctional:
 
             content = "# Test Content\n\nThis is a test."
             metadata = {
-                "url": "https://example.com",
+                "url": f"https://example.com/unique-{uuid.uuid4()}",
                 "source_type": "html",
                 "title": "Test Title",
             }

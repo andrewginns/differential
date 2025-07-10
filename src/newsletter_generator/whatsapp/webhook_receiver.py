@@ -4,11 +4,16 @@ This module implements a FastAPI endpoint to receive webhook notifications from
 the WhatsApp Business API, extract URLs from messages, and forward them to the
 ingestion orchestrator. It includes robust error handling, retry mechanisms,
 and circuit breaker patterns for improved reliability.
+
+It also supports slash commands for generating newsletters and other interactions.
 """
 
 import re
 import time
-from typing import List, Optional, Dict, Any
+import os
+import asyncio
+import datetime
+from typing import List, Optional, Dict, Any, Tuple, Union
 from urllib.parse import urlparse
 from functools import wraps
 
@@ -33,6 +38,8 @@ from newsletter_generator.whatsapp.webhook_errors import (
     NetworkError,
     CircuitBreakerError,
 )
+from newsletter_generator.newsletter.assembler import assemble_newsletter
+from newsletter_generator.ai.processor import ModelProvider
 
 logger = get_logger("whatsapp.webhook")
 
@@ -238,6 +245,137 @@ async def send_message_reaction(message_id: str, sender_phone: str, emoji: str =
         return False
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(NetworkError),
+)
+async def send_text_message(
+    recipient_phone: str,
+    text: str,
+    is_markdown: bool = False,
+    reply_to_message_id: Optional[str] = None,
+) -> bool:
+    """Send a text message to a WhatsApp user.
+
+    Args:
+        recipient_phone: The phone number of the message recipient.
+        text: The text content to send.
+        is_markdown: Whether the text is formatted as markdown.
+        reply_to_message_id: Optional message ID to reply to.
+
+    Returns:
+        bool: True if the message was sent successfully, False otherwise.
+
+    Raises:
+        NetworkError: If there's a network error when sending the message.
+    """
+    try:
+        phone_number_id = CONFIG.get("WHATSAPP_PHONE_NUMBER_ID")
+        api_token = CONFIG.get("WHATSAPP_API_TOKEN")
+        api_version = CONFIG.get("WHATSAPP_API_VERSION", "v18.0")
+
+        if not phone_number_id or not api_token:
+            logger.error("Missing WhatsApp API configuration")
+            return False
+
+        url = f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_token}"}
+
+        MAX_MESSAGE_SIZE = 4000  # Slightly less than the limit to be safe
+        message_chunks = []
+
+        if len(text) > MAX_MESSAGE_SIZE:
+            paragraphs = text.split("\n\n")
+            current_chunk = ""
+
+            for paragraph in paragraphs:
+                if len(current_chunk) + len(paragraph) + 2 <= MAX_MESSAGE_SIZE:
+                    if current_chunk:
+                        current_chunk += "\n\n"
+                    current_chunk += paragraph
+                else:
+                    if current_chunk:
+                        message_chunks.append(current_chunk)
+
+                    if len(paragraph) > MAX_MESSAGE_SIZE:
+                        sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+                        current_chunk = ""
+
+                        for sentence in sentences:
+                            if len(current_chunk) + len(sentence) + 1 <= MAX_MESSAGE_SIZE:
+                                if current_chunk:
+                                    current_chunk += " "
+                                current_chunk += sentence
+                            else:
+                                if current_chunk:
+                                    message_chunks.append(current_chunk)
+
+                                if len(sentence) > MAX_MESSAGE_SIZE:
+                                    words = sentence.split()
+                                    current_chunk = ""
+
+                                    for word in words:
+                                        if len(current_chunk) + len(word) + 1 <= MAX_MESSAGE_SIZE:
+                                            if current_chunk:
+                                                current_chunk += " "
+                                            current_chunk += word
+                                        else:
+                                            message_chunks.append(current_chunk)
+                                            current_chunk = word
+                                else:
+                                    current_chunk = sentence
+                    else:
+                        current_chunk = paragraph
+
+            if current_chunk:
+                message_chunks.append(current_chunk)
+        else:
+            message_chunks = [text]
+
+        all_success = True
+        for i, chunk in enumerate(message_chunks):
+            if len(message_chunks) > 1:
+                chunk = f"({i + 1}/{len(message_chunks)}) {chunk}"
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": recipient_phone,
+                "type": "text",
+                "text": {"body": chunk, "preview_url": True},
+            }
+
+            if reply_to_message_id and i == 0:  # Only set context for the first message
+                payload["context"] = {"message_id": reply_to_message_id}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        response_data = await response.json()
+                        logger.info(
+                            f"Successfully sent message chunk {i + 1}/{len(message_chunks)} to {recipient_phone}: {response_data}"
+                        )
+                    else:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to send message chunk {i + 1}/{len(message_chunks)} to {recipient_phone}, status {response.status}: {error_text}"
+                        )
+                        all_success = False
+
+            if i < len(message_chunks) - 1:
+                await asyncio.sleep(1)
+
+        return all_success
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Network error sending message to {recipient_phone}: {e}")
+        raise NetworkError(f"Network error sending message: {e}")
+    except Exception as e:
+        logger.error(f"Error sending message to {recipient_phone}: {e}")
+        return False
+
+
 @app.get("/webhook")
 async def verify_webhook(
     hub_mode: str = Query(..., alias="hub.mode"),
@@ -315,6 +453,199 @@ async def process_url(url: str, message_metadata: Dict[str, Any]) -> Dict[str, A
         raise ProcessingError(f"Error processing URL: {e}")
 
 
+def parse_command_args(command_text: str) -> Tuple[str, Dict[str, str]]:
+    """Parse command arguments from a command string.
+
+    Args:
+        command_text: The command text to parse (e.g., "/generate --days 5 --model gemini")
+
+    Returns:
+        A tuple containing the command name and a dictionary of arguments
+    """
+    parts = command_text.split()
+    command = parts[0][1:] if parts and parts[0].startswith("/") else ""
+
+    args = {}
+    i = 1
+    while i < len(parts):
+        if parts[i].startswith("--"):
+            arg_name = parts[i][2:]
+            if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                args[arg_name] = parts[i + 1]
+                i += 2
+            else:
+                args[arg_name] = "true"
+                i += 1
+        else:
+            i += 1
+
+    return command, args
+
+
+async def handle_generate_command(sender: str, message_id: str, args: Dict[str, str]) -> bool:
+    """Handle the /generate command to generate a newsletter.
+
+    Args:
+        sender: The phone number of the sender
+        message_id: The ID of the message containing the command
+        args: The parsed command arguments
+
+    Returns:
+        True if the command was handled successfully, False otherwise
+    """
+    try:
+        days = int(args.get("days", "7"))
+        model_provider_str = args.get("model", "gemini").lower()
+
+        model_provider = (
+            ModelProvider.OPENAI if model_provider_str == "openai" else ModelProvider.GEMINI
+        )
+
+        # Send acknowledgment
+        await send_text_message(
+            sender,
+            f"Generating newsletter with content from the past {days} days using {model_provider_str} model...",
+            reply_to_message_id=message_id,
+        )
+
+        # Generate the newsletter
+        newsletter_path = assemble_newsletter(days=days, model_provider=model_provider)
+
+        if newsletter_path:
+            # Read the generated newsletter
+            with open(newsletter_path, "r") as f:
+                newsletter_content = f.read()
+
+            # Send the newsletter
+            success = await send_text_message(
+                sender, f"Here's your newsletter:\n\n{newsletter_content}", is_markdown=True
+            )
+
+            return success
+        else:
+            await send_text_message(
+                sender,
+                f"No content found in the past {days} days to generate a newsletter.",
+                reply_to_message_id=message_id,
+            )
+            return True
+
+    except Exception as e:
+        logger.error(f"Error handling /generate command: {e}")
+        await send_text_message(
+            sender, f"Error generating newsletter: {str(e)}", reply_to_message_id=message_id
+        )
+        return False
+
+
+async def handle_help_command(sender: str, message_id: str) -> bool:
+    """Handle the /help command to show available commands.
+
+    Args:
+        sender: The phone number of the sender
+        message_id: The ID of the message containing the command
+
+    Returns:
+        True if the command was handled successfully, False otherwise
+    """
+    help_text = """
+*Available Commands:*
+
+*/generate* - Generate a newsletter
+  Options:
+  --days <number> - Number of days to look back for content (default: 7)
+  --model <provider> - LLM provider to use (openai or gemini, default: gemini)
+  
+  Example: /generate --days 5 --model openai
+
+*/status* - Show ingested content count for potential newsletter
+  Options:
+  --days <number> - Number of days to look back (default: 7)
+  
+  Example: /status --days 3
+
+*/help* - Show this help message
+
+*URL Sharing:*
+Simply share URLs to ingest content for your newsletter. The system will automatically process them.
+"""
+
+    return await send_text_message(
+        sender, help_text, is_markdown=True, reply_to_message_id=message_id
+    )
+
+
+async def handle_status_command(sender: str, message_id: str, args: Dict[str, str]) -> bool:
+    """Handle the /status command to show ingested content count.
+
+    Args:
+        sender: The phone number of the sender
+        message_id: The ID of the message containing the command
+        args: The parsed command arguments
+
+    Returns:
+        True if the command was handled successfully, False otherwise
+    """
+    try:
+        days = int(args.get("days", "7"))
+
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
+
+        all_content = storage_manager.list_content()
+
+        recent_content = []
+        for content_id, metadata in all_content.items():
+            content_date_str = metadata.get("date_added", "")
+
+            if not content_date_str:
+                continue
+
+            content_date = datetime.datetime.fromisoformat(content_date_str)
+
+            if content_date.tzinfo is not None:
+                content_date = content_date.replace(tzinfo=None)
+
+            if content_date >= cutoff_date:
+                recent_content.append((content_id, metadata))
+
+        categories = {}
+        uncategorized = 0
+
+        for _, metadata in recent_content:
+            category = metadata.get("category")
+            if category:
+                categories[category] = categories.get(category, 0) + 1
+            else:
+                uncategorized += 1
+
+        status_message = f"*Content Status for the Past {days} Days:*\n\n"
+        status_message += f"Total content items: {len(recent_content)}\n\n"
+
+        if categories:
+            status_message += "*Categories:*\n"
+            for category, count in sorted(categories.items()):
+                status_message += f"- {category}: {count} item{'s' if count > 1 else ''}\n"
+
+        if uncategorized:
+            status_message += f"\nUncategorized items: {uncategorized}\n"
+
+        if not recent_content:
+            status_message += "No content found in the specified time period.\n"
+
+        status_message += "\nUse /generate to create a newsletter with this content."
+
+        return await send_text_message(
+            sender, status_message, is_markdown=True, reply_to_message_id=message_id
+        )
+
+    except Exception as e:
+        logger.error(f"Error handling /status command: {e}")
+        await send_text_message(
+            sender, f"Error getting content status: {str(e)}", reply_to_message_id=message_id
+        )
+        return False
+
+
 async def process_webhook(payload: Dict[str, Any]):
     """Process a webhook payload.
 
@@ -322,6 +653,7 @@ async def process_webhook(payload: Dict[str, Any]):
         payload: The webhook payload to process.
     """
     processed_urls = []
+    processed_commands = []
     errors = []
 
     try:
@@ -360,22 +692,61 @@ async def process_webhook(payload: Dict[str, Any]):
                         "message_id": message_id,
                     }
 
-                    urls = extract_urls(text)
+                    if text.startswith("/"):
+                        logger.info(f"Received command: {text}")
 
-                    if urls:
-                        logger.info(f"Extracted {len(urls)} URLs from message: {urls}")
+                        command, args = parse_command_args(text)
 
-                        for url in urls:
-                            try:
-                                result = await process_url(url, message_metadata)
-                                processed_urls.append(result)
-                            except (TransientError, ProcessingError) as e:
-                                logger.error(f"Error processing URL {url}: {e}")
-                                errors.append({"url": url, "error": str(e)})
+                        if command == "generate":
+                            success = await handle_generate_command(sender, message_id, args)
+                            processed_commands.append(
+                                {"command": "generate", "args": args, "success": success}
+                            )
+
+                        elif command == "help":
+                            success = await handle_help_command(sender, message_id)
+                            processed_commands.append({"command": "help", "success": success})
+
+                        elif command == "status":
+                            success = await handle_status_command(sender, message_id, args)
+                            processed_commands.append(
+                                {"command": "status", "args": args, "success": success}
+                            )
+
+                        else:
+                            await send_text_message(
+                                sender,
+                                f"Unknown command: {command}\nUse /help to see available commands.",
+                                reply_to_message_id=message_id,
+                            )
+                            processed_commands.append(
+                                {"command": command, "success": False, "error": "Unknown command"}
+                            )
                     else:
-                        logger.info("No URLs found in message")
+                        # Process as normal message with URLs
+                        urls = extract_urls(text)
 
-        logger.info(f"Processed {len(processed_urls)} URLs with {len(errors)} errors")
+                        if urls:
+                            logger.info(f"Extracted {len(urls)} URLs from message: {urls}")
+
+                            for url in urls:
+                                try:
+                                    result = await process_url(url, message_metadata)
+                                    processed_urls.append(result)
+                                except (TransientError, ProcessingError) as e:
+                                    logger.error(f"Error processing URL {url}: {e}")
+                                    errors.append({"url": url, "error": str(e)})
+                        else:
+                            logger.info("No URLs found in message")
+                            await send_text_message(
+                                sender,
+                                "I can process URLs to collect content for your newsletter or respond to commands like /generate, /status, or /help.",
+                                reply_to_message_id=message_id,
+                            )
+
+        logger.info(
+            f"Processed {len(processed_urls)} URLs and {len(processed_commands)} commands with {len(errors)} errors"
+        )
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
 
